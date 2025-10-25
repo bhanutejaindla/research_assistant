@@ -1,0 +1,56 @@
+mcp
+pydantic
+requests
+beautifulsoup4
+fpdf
+psycopg2-binary
+sqlalchemy
+pgvector
+openai
+streamlit# =========================
+# 1️⃣ Core MCP + Server
+# =========================
+openai-mcp
+fastapi
+uvicorn
+
+# =========================
+# 2️⃣ Web Scraper & Document Retrieval (Agent 2)
+# =========================
+requests
+beautifulsoup4
+lxml
+newspaper3k
+duckduckgo-search
+
+# =========================
+# 3️⃣ Deep Analysis (Agent 3)
+# =========================
+pandas
+numpy
+scikit-learn
+scipy
+
+# =========================
+# 4️⃣ Fact-Checking & Validation (Agent 4)
+# =========================
+fuzzywuzzy
+tldextract
+
+# =========================
+# 5️⃣ Output Formatting & Visualization (Agent 5)
+# =========================
+matplotlib
+seaborn
+plotly
+python-docx
+reportlab
+markdown
+
+# =========================
+# 6️⃣ Optional NLP / RAG Enhancements
+# =========================
+openai
+langchain
+psycopg2-binary      # PostgreSQL client
+pgvector              # Vector storage extension for PostgreSQL
