@@ -1,137 +1,135 @@
-# agents/fact_validation/agent.py
+import json
 import os
 from openai import OpenAI
-from dotenv import load_dotenv
-from agents.fact_validation.tools.source_credibility_tool import run as source_credibility_run
-from agents.fact_validation.tools.cross_reference_tool import run as cross_reference_run
-from agents.fact_validation.tools.confidence_scorer_tool import run as confidence_scorer_run
-from agents.fact_validation.tools.contradiction_detector_tool import run as contradiction_detector_run
-from agents.fact_validation.tools.llm_analysis_tool import run as llm_analysis_run
+from agents.deep_analysis.config import MODEL_NAME
 
-# Load environment variables
-load_dotenv()
+# Import MCP tools
+from agents.deep_analysis.tools.comparative_analysis_tool import comparative_analysis_tool
+from agents.deep_analysis.tools.trend_analysis_tool import trend_analysis_tool
+from agents.deep_analysis.tools.causal_reasoning_tool import causal_reasoning_tool
+from agents.deep_analysis.tools.statistical_analysis_tool import statistical_analysis_tool
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Tool descriptions for routing
-TOOL_DESCRIPTIONS = {
-    "source_credibility_tool": "Evaluates the trustworthiness and credibility of information sources",
-    "cross_reference_tool": "Cross-checks claims across documents for consistency or disagreement",
-    "confidence_scorer_tool": "Assigns a reliability confidence level based on credibility and consistency scores",
-    "contradiction_detector_tool": "Detects conflicting or opposite statements in a dataset",
-    "llm_analysis_tool": "Leverages an LLM to provide high-level analytical reasoning and fact-checking"
-}
-
-TOOLS = {
-    "source_credibility_tool": source_credibility_run,
-    "cross_reference_tool": cross_reference_run,
-    "confidence_scorer_tool": confidence_scorer_run,
-    "contradiction_detector_tool": contradiction_detector_run,
-    "llm_analysis_tool": llm_analysis_run
-}
+# Initialize OpenAI client
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-def choose_tool(query: str) -> str:
+# --- LLM Decision Logic ---
+def decide_tool(query: str) -> str:
     """
-    Ask the LLM which tool best fits this fact-checking query.
+    Uses LLM reasoning to decide which analysis tool should be called
+    based on the user's query.
     """
-    tool_descriptions = "\n".join(
-        [f"- {name}: {desc}" for name, desc in TOOL_DESCRIPTIONS.items()]
+    system_prompt = """
+    You are a Deep Analysis Controller Agent.
+    You have the following tools available:
+    1. comparative_analysis_tool - compare multiple documents
+    2. trend_analysis_tool - detect patterns over time
+    3. causal_reasoning_tool - detect cause-effect relationships
+    4. statistical_analysis_tool - perform quantitative analysis
+
+    Based on the user's query, decide which ONE tool is most appropriate.
+    Respond with only the tool name (no explanation).
+    """
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": query}
+        ],
+        temperature=0
     )
-
-    prompt = f"""
-You are a Fact-Checking Orchestrator.
-You have access to the following tools:
-
-{tool_descriptions}
-
-Given the user's request below, return ONLY the name of the most suitable tool.
-
-User request:
-\"\"\"{query}\"\"\"
-Answer with just the tool name.
-"""
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        tool_name = response.choices[0].message.content.strip()
-        return tool_name
-    except Exception as e:
-        print(f"Error selecting tool: {str(e)}")
-        return "llm_analysis_tool"  # Default fallback
+    return response.choices[0].message["content"].strip()
 
 
-def run_agent(query: str):
-    """
-    Uses LLM to route the query to the correct fact-checking tool.
-    """
-    tool_name = choose_tool(query)
-
-    print(f"\n🔍 Selected Tool: {tool_name}")
-
-    if tool_name not in TOOLS:
-        print(f"⚠️ Tool '{tool_name}' not recognized. Using llm_analysis_tool as fallback.")
-        tool_name = "llm_analysis_tool"
-
-    tool_func = TOOLS[tool_name]
-
-    try:
-        # Basic input handling depending on tool type
-        if tool_name == "source_credibility_tool":
-            # Extract URLs from query or use the query itself
-            inputs = [query] if isinstance(query, str) else query
-            return tool_func(inputs)
-        
-        elif tool_name == "cross_reference_tool":
-            # For cross-reference, we need multiple claims
-            # Try to split the query into claims or use example claims
-            claims = [
-                query,
-                "AI accuracy improves over time"
-            ]
-            return tool_func(claims)
-        
-        elif tool_name == "confidence_scorer_tool":
-            # Use sample scores for demonstration
-            return tool_func([8, 7, 9])
-        
-        elif tool_name == "contradiction_detector_tool":
-            # Create statements for contradiction detection
-            statements = [
-                query,
-                "AI is not accurate for diagnosis",
-                "AI is accurate for diagnosis"
-            ]
-            return tool_func(statements)
-        
-        elif tool_name == "llm_analysis_tool":
-            # Direct LLM analysis
-            return tool_func(query)
-        
-        else:
-            return tool_func(query)
-    
-    except Exception as e:
-        return f"Error executing tool '{tool_name}': {str(e)}"
+def extract_keyword(query: str) -> str:
+    """Naive keyword extractor for trend analysis."""
+    words = query.split()
+    return words[-1] if words else "data"
 
 
-if __name__ == "__main__":
-    print("🧠 Fact-Checking & Validation Agent Ready.")
-    print("=" * 60)
-    
-    sample_queries = [
-        "Check how trustworthy the source https://www.cdc.gov is.",
-        "Compare these claims: AI increases accuracy vs AI reduces accuracy.",
-        "Give confidence score for credibility 9, 8, 7.",
-        "Detect contradictions in statements about AI reliability.",
-        "Fact-check the claim: 'AI will replace 80% of jobs by 2030.'"
+# --- Main Deep Analysis Runner ---
+def run_deep_analysis(query: str, documents: list):
+    tool_name = decide_tool(query)
+    print(f"\n[Agent 3 Decision] → Selected Tool: {tool_name}\n")
+
+    if tool_name == "comparative_analysis_tool":
+        result = comparative_analysis_tool.func(documents)
+    elif tool_name == "trend_analysis_tool":
+        keyword = extract_keyword(query)
+        result = trend_analysis_tool.func(documents, keyword)
+    elif tool_name == "causal_reasoning_tool":
+        result = causal_reasoning_tool.func(documents)
+    elif tool_name == "statistical_analysis_tool":
+        result = statistical_analysis_tool.func(documents)
+    else:
+        result = {"error": f"Unknown tool selected: {tool_name}"}
+
+    return {"selected_tool": tool_name, "result": result}
+
+
+# --- Individual tool demo runners ---
+def test_comparative_analysis():
+    print("\n🧩 Running Comparative Analysis Tool Example")
+    docs = [
+        "AI and machine learning drive innovation in healthcare.",
+        "Healthcare and AI technologies are evolving rapidly.",
     ]
+    result = comparative_analysis_tool.func(docs)
+    print(json.dumps(result, indent=2))
 
-    for q in sample_queries:
-        print(f"\n📝 User Query: {q}")
-        result = run_agent(q)
-        print(result)
-        print("-" * 60)
+
+def test_trend_analysis():
+    print("\n📈 Running Trend Analysis Tool Example")
+    docs = [
+        "2023: AI adoption increased by 20%",
+        "2024: AI adoption increased by 50%",
+        "2025: AI adoption continues to rise",
+    ]
+    result = trend_analysis_tool.func(docs, keyword="AI")
+    print(json.dumps(result, indent=2))
+
+
+def test_causal_reasoning():
+    print("\n⚙️ Running Causal Reasoning Tool Example")
+    docs = [
+        "Economic growth leads to higher employment rates.",
+        "Increased rainfall causes flooding in coastal areas.",
+    ]
+    result = causal_reasoning_tool.func(docs)
+    print(json.dumps(result, indent=2))
+
+
+def test_statistical_analysis():
+    print("\n📊 Running Statistical Analysis Tool Example")
+    docs = [
+        "Revenue grew by 120 in 2023 and reached 240 in 2024.",
+        "Profits increased to 360 last year.",
+    ]
+    result = statistical_analysis_tool.func(docs)
+    print(json.dumps(result, indent=2))
+
+
+def test_auto_decision():
+    print("\n🧠 Running LLM Decision Example")
+    docs = [
+        "Quantum computing leads to faster results in 2025.",
+        "Due to new quantum breakthroughs, performance increased by 25%.",
+    ]
+    query = "Find causal relationships between technological advances and performance."
+    result = run_deep_analysis(query, docs)
+    print(json.dumps(result, indent=2))
+
+
+# --- Entry Point ---
+if __name__ == "__main__":
+    print("\n===== Deep Analysis Agent Tool Demos =====\n")
+
+    # Run each tool test individually
+    test_comparative_analysis()
+    test_trend_analysis()
+    test_causal_reasoning()
+    test_statistical_analysis()
+
+    # Test LLM-powered dynamic tool selection
+    test_auto_decision()
