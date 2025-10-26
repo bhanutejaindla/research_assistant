@@ -1,7 +1,7 @@
 # agents/web_retriever/tools/semantic_search_tool.py
 from fastmcp import FastMCP
 from agents.web_retriever.config import POSTGRES_URI, EMBED_MODEL, VECTOR_DIM
-from sqlalchemy import create_engine, Column, Integer, Text, text  # ADD: import text
+from sqlalchemy import create_engine, Column, Integer, Text, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from pgvector.sqlalchemy import Vector
 from typing import Optional, Literal, List
@@ -46,29 +46,41 @@ def store(url: str, text: str) -> dict:
             session.add(doc)
         session.commit()
         return {"status": "stored", "url": url}
+    except Exception as e:
+        session.rollback()
+        return {"error": f"Failed to store document: {str(e)}"}
     finally:
         session.close()
 
 def search(query: str, top_k: int = 5) -> List[dict]:
     model = _load_model()
-    q_emb = model.encode([query], normalize_embedings=True)[0].tolist()
+    q_emb = model.encode([query], normalize_embeddings=True)[0].tolist()
     session = Session()
     
     try:
-        # CHANGE: Wrap SQL in text()
-        results = session.execute(
-            text(f"""
-            SELECT url, text, embedding <#> ARRAY{q_emb} AS distance
+        # Convert embedding list to proper format for PostgreSQL
+        emb_str = "[" + ",".join(map(str, q_emb)) + "]"
+        
+        # Use parameterized query with text()
+        sql_query = text("""
+            SELECT url, text, embedding <#> :embedding::vector AS distance
             FROM documents
             ORDER BY distance ASC
-            LIMIT {top_k};
-            """)
+            LIMIT :limit
+        """)
+        
+        results = session.execute(
+            sql_query,
+            {"embedding": emb_str, "limit": top_k}
         ).fetchall()
         
         return [
             {"url": r[0], "snippet": r[1][:500], "distance": float(r[2])} 
             for r in results
         ]
+    except Exception as e:
+        print(f"Search error: {str(e)}")
+        return []
     finally:
         session.close()
 
@@ -80,13 +92,16 @@ def _semantic_search_impl(
     query: Optional[str] = None,
     top_k: int = 5
 ) -> dict:
-    if action == "store" and url and text:
-        return store(url, text)
-    elif action == "search" and query:
-        results = search(query, top_k)
-        return {"results": results}
-    
-    return {"error": "Invalid parameters. Store requires 'url' and 'text'. Search requires 'query'."}
+    try:
+        if action == "store" and url and text:
+            return store(url, text)
+        elif action == "search" and query:
+            results = search(query, top_k)
+            return {"results": results}
+        
+        return {"error": "Invalid parameters. Store requires 'url' and 'text'. Search requires 'query'."}
+    except Exception as e:
+        return {"error": f"Operation failed: {str(e)}"}
 
 # Register with MCP
 @mcp.tool()
