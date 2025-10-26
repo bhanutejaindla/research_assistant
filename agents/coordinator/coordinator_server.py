@@ -18,7 +18,7 @@ def process_query(query: str):
     progress_tracker.start("Research Workflow")
 
     for task in prioritized:
-        progress_tracker.update(task, "completed")
+        progress_tracker.update(task["task"], "completed")  # extract string
 
     structured_results = [
         {"task": t, "agent": "Coordinator", "result": f"Completed: {t}"}

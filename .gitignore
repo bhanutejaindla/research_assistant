@@ -4,8 +4,10 @@ __pycache__/
 
 # Virtual environment
 venv/
-.env/
 .venv/
+
+# Environment file
+.env        # <- ignore only this file
 
 # OS files
 .DS_Store

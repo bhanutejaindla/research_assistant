@@ -80,6 +80,6 @@ def _heuristic_prioritize(sub_tasks: List[str]) -> List[str]:
             return 2
         return 3
 
-    scored = [(score_task(t), t) for t in sub_tasks]
+    scored = [(score_task(t["task"]), t) for t in sub_tasks]
     scored.sort(key=lambda x: x[0])
     return [t for _, t in scored]
