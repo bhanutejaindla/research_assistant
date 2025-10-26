@@ -26,7 +26,7 @@ class Document(Base):
     id = Column(Integer, primary_key=True)
     url = Column(Text, unique=True)
     text = Column(Text)
-    embedding = Column(Vector(VECTOR_DIM))  # Changed from dimension= to positional argument
+    embedding = Column(Vector(VECTOR_DIM))
 
 Base.metadata.create_all(engine)
 
@@ -55,7 +55,6 @@ def search(query: str, top_k: int = 5) -> List[dict]:
     session = Session()
     
     try:
-        # SQL query using pgvector cosine distance
         results = session.execute(
             f"""
             SELECT url, text, embedding <#> ARRAY{q_emb} AS distance
@@ -72,6 +71,23 @@ def search(query: str, top_k: int = 5) -> List[dict]:
     finally:
         session.close()
 
+# ADD THIS: Implementation function (no decorator)
+def _semantic_search_impl(
+    action: Literal["store", "search"],
+    url: Optional[str] = None,
+    text: Optional[str] = None,
+    query: Optional[str] = None,
+    top_k: int = 5
+) -> dict:
+    if action == "store" and url and text:
+        return store(url, text)
+    elif action == "search" and query:
+        results = search(query, top_k)
+        return {"results": results}
+    
+    return {"error": "Invalid parameters. Store requires 'url' and 'text'. Search requires 'query'."}
+
+# CHANGE THIS: Make it call the implementation
 @mcp.tool()
 def semantic_search(
     action: Literal["store", "search"],
@@ -93,17 +109,11 @@ def semantic_search(
     Returns:
         Dictionary with status/results or error message
     """
-    if action == "store" and url and text:
-        return store(url, text)
-    elif action == "search" and query:
-        results = search(query, top_k)
-        return {"results": results}
-    
-    return {"error": "Invalid parameters. Store requires 'url' and 'text'. Search requires 'query'."}
+    return _semantic_search_impl(action=action, url=url, text=text, query=query, top_k=top_k)
 
-# Backwards compatibility
+# CHANGE THIS: Call implementation instead of semantic_search
 def run(action: str, url: str = None, text: str = None, query: str = None, top_k: int = 5):
-    return semantic_search(action=action, url=url, text=text, query=query, top_k=top_k)
+    return _semantic_search_impl(action=action, url=url, text=text, query=query, top_k=top_k)
 
 # Export
 __all__ = ['semantic_search', 'store', 'search', 'run', 'mcp']

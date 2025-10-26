@@ -34,4 +34,3 @@ print("LLM Answer:\n", rag_result["llm_answer"])
 print("Retrieved Docs:\n", rag_result["retrieved_docs"])
 
 
-//pip install readability-lxml beautifulsoup4 chardet requests sentence-transformers psycopg2-binary sqlalchemy pgvector
