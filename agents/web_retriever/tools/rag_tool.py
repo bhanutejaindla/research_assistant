@@ -55,8 +55,8 @@ def rag_search(query: str, urls: Optional[List[str]] = None, top_k: int = 5) -> 
     """
     return _rag_search_impl(query=query, urls=urls, top_k=top_k)
 
-# Keep the run function for backwards compatibility - calls implementation
-def run(query: str, urls: List[str] = [], top_k: int = 5):
+# Keep the run function for backwards compatibility - FIXED SIGNATURE
+def run(query: str, urls: Optional[List[str]] = None, top_k: int = 5):
     return _rag_search_impl(query=query, urls=urls, top_k=top_k)
 
 # Export
