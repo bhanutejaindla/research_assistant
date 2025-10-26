@@ -1,37 +1,46 @@
+# agents/fact_validation/validation_server.py
 import os
 from openai import OpenAI
+from dotenv import load_dotenv
+from agents.fact_validation.tools.source_credibility_tool import run as source_credibility_run
+from agents.fact_validation.tools.cross_reference_tool import run as cross_reference_run
+from agents.fact_validation.tools.confidence_scorer_tool import run as confidence_scorer_run
+from agents.fact_validation.tools.contradiction_detector_tool import run as contradiction_detector_run
+from agents.fact_validation.tools.llm_validation_tool import run as llm_validation_run
 
-# Import MCP tools
-from agents.fact_validation.tools.source_credibility_tool import source_credibility_tool
-from agents.fact_validation.tools.cross_reference_tool import cross_reference_tool
-from agents.fact_validation.tools.confidence_scorer_tool import confidence_scorer_tool
-from agents.fact_validation.tools.contradiction_detector_tool import contradiction_detector_tool
-from agents.fact_validation.tools.llm_validation_tool import llm_validation_tool
+# Load environment variables
+load_dotenv()
 
-# Initialize OpenAI client
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Dictionary of all tools
+# Tool descriptions for routing
+TOOL_DESCRIPTIONS = {
+    "source_credibility_tool": "Evaluates the trustworthiness and credibility of information sources",
+    "cross_reference_tool": "Cross-checks claims across documents for consistency or disagreement",
+    "confidence_scorer_tool": "Assigns a reliability confidence level based on credibility and consistency scores",
+    "contradiction_detector_tool": "Detects conflicting or opposite statements in a dataset",
+    "llm_validation_tool": "Uses an LLM to fact-check a claim with reasoning and citation hints"
+}
+
 TOOLS = {
-    "source_credibility_tool": source_credibility_tool,
-    "cross_reference_tool": cross_reference_tool,
-    "confidence_scorer_tool": confidence_scorer_tool,
-    "contradiction_detector_tool": contradiction_detector_tool,
-    "llm_validation_tool": llm_validation_tool
+    "source_credibility_tool": source_credibility_run,
+    "cross_reference_tool": cross_reference_run,
+    "confidence_scorer_tool": confidence_scorer_run,
+    "contradiction_detector_tool": contradiction_detector_run,
+    "llm_validation_tool": llm_validation_run
 }
 
 
-# --- LLM Tool Selector ---
 def choose_tool(query: str) -> str:
     """
-    Uses an LLM to decide which Fact-Checking tool is most appropriate for the query.
-    Returns the tool name.
+    Ask the LLM which tool best fits this fact-checking query.
     """
-    tool_descriptions = "\n".join([f"- {name}: {tool.description}" for name, tool in TOOLS.items()])
+    tool_descriptions = "\n".join(
+        [f"- {name}: {desc}" for name, desc in TOOL_DESCRIPTIONS.items()]
+    )
 
     prompt = f"""
-You are a Fact-Checking Orchestrator Agent.
+You are a Fact-Checking Orchestrator.
 You have access to the following tools:
 
 {tool_descriptions}
@@ -43,57 +52,71 @@ User request:
 Answer with just the tool name.
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        tool_name = response.choices[0].message.content.strip()
+        return tool_name
+    except Exception as e:
+        print(f"Error selecting tool: {str(e)}")
+        return "llm_validation_tool"  # Default fallback
 
-    return response.choices[0].message.content.strip()
 
-
-# --- Main Agent Runner ---
 def run_agent(query: str):
     """
-    Routes the query to the correct MCP tool based on LLM decision.
+    Uses LLM to route the query to the correct fact-checking tool.
     """
     tool_name = choose_tool(query)
-    print(f"\n🔍 Selected Tool: {tool_name}\n")
+
+    print(f"\n🔍 Selected Tool: {tool_name}")
 
     if tool_name not in TOOLS:
-        return f"Tool '{tool_name}' not recognized."
+        print(f"⚠️ Tool '{tool_name}' not recognized. Using llm_validation_tool as fallback.")
+        tool_name = "llm_validation_tool"
 
-    tool = TOOLS[tool_name]
+    tool_func = TOOLS[tool_name]
 
-    # Simple demo inputs depending on tool type
-    if tool_name == "source_credibility_tool":
-        inputs = [query] if isinstance(query, str) else query
-        return tool.func(inputs)
+    try:
+        # Basic input handling depending on tool type
+        if tool_name == "source_credibility_tool":
+            # Extract URLs from query or use the query itself as a list
+            inputs = [query]
+            return tool_func(inputs)
+        
+        elif tool_name == "cross_reference_tool":
+            claims = [
+                query,
+                "AI accuracy improves over time"
+            ]
+            return tool_func(claims)
+        
+        elif tool_name == "confidence_scorer_tool":
+            return tool_func([8, 7, 9])
+        
+        elif tool_name == "contradiction_detector_tool":
+            statements = [
+                query,
+                "AI is not accurate for diagnosis",
+                "AI is accurate for diagnosis"
+            ]
+            return tool_func(statements)
+        
+        elif tool_name == "llm_validation_tool":
+            return tool_func(query)
+        
+        else:
+            return tool_func(query)
+    
+    except Exception as e:
+        return f"Error executing tool '{tool_name}': {str(e)}"
 
-    elif tool_name == "cross_reference_tool":
-        # Demo: comparing user query with a dummy claim
-        return tool.func([query, "AI improves diagnostic accuracy."])
 
-    elif tool_name == "confidence_scorer_tool":
-        # Demo: use fixed scores
-        return tool.func([8, 7, 9])
-
-    elif tool_name == "contradiction_detector_tool":
-        return tool.func([
-            query,
-            "AI is not reliable for diagnosis",
-            "AI is reliable for diagnosis"
-        ])
-
-    else:
-        # llm_validation_tool or fallback
-        return tool.func(query)
-
-
-# --- Entry Point for Testing ---
 if __name__ == "__main__":
-    print("\n===== Fact-Checking & Validation Agent =====\n")
-
+    print("🧠 Fact-Checking & Validation Agent Ready.")
+    print("=" * 60)
+    
     sample_queries = [
         "Check how trustworthy the source https://www.cdc.gov is.",
         "Compare these claims: AI increases accuracy vs AI reduces accuracy.",
@@ -103,7 +126,7 @@ if __name__ == "__main__":
     ]
 
     for q in sample_queries:
-        print(f"\nUser Query: {q}")
+        print(f"\n📝 User Query: {q}")
         result = run_agent(q)
         print(result)
         print("-" * 60)

@@ -1,56 +1,59 @@
-from mcp import Tool
-from pydantic import BaseModel, Field
-import re
+# agents/fact_validation/tools/source_credibility_tool.py
+from fastmcp import FastMCP
+from typing import List
+from dotenv import load_dotenv
+import os
 
-# Define the input schema using Pydantic
-class SourceCredibilityInput(BaseModel):
-    urls: list[str] = Field(
-        description="List of URLs to evaluate for credibility",
-        min_length=1
-    )
+# Load environment variables
+load_dotenv()
 
-def source_credibility_tool_func(urls: list[str]) -> str:
+mcp = FastMCP("source-credibility-tool")
+
+# Implementation function (no decorator)
+def _source_credibility_impl(sources: List[str]) -> str:
     """
-    Evaluates credibility of given sources based on domain and content pattern.
+    Evaluates the trustworthiness and credibility of information sources.
     """
-    if not urls:
-        return "Please provide one or more URLs to evaluate."
+    if not sources:
+        return "Please provide at least one source to evaluate."
+    
+    trusted_domains = ["cdc.gov", "who.int", "nih.gov", "gov", "edu", "nature.com", "science.org"]
+    
+    results = []
+    for source in sources:
+        source_lower = source.lower()
+        is_trusted = any(domain in source_lower for domain in trusted_domains)
+        
+        credibility = "HIGH" if is_trusted else "MEDIUM/LOW"
+        results.append(f"Source: {source}\nCredibility: {credibility}")
+    
+    return "--- Source Credibility Report ---\n" + "\n\n".join(results)
 
-    credibility_scores = []
-    for url in urls:
-        score = 0
-        if re.search(r"\.gov|\.edu|\.org", url):
-            score += 8
-        elif re.search(r"\.com", url):
-            score += 6
-        else:
-            score += 4
+# Register with MCP
+@mcp.tool()
+def source_credibility_tool(sources: List[str]) -> str:
+    """
+    Evaluates the trustworthiness and credibility of information sources.
+    
+    Args:
+        sources: List of source URLs or names to evaluate for credibility
+    
+    Returns:
+        A report showing credibility assessment for each source
+    """
+    return _source_credibility_impl(sources)
 
-        if "wikipedia" in url:
-            score -= 2
-        if "blog" in url or "medium" in url:
-            score -= 3
+# For backwards compatibility / testing
+def run(sources: List[str]) -> str:
+    return _source_credibility_impl(sources)
 
-        credibility_scores.append(f"{url} → Credibility Score: {max(min(score,10),1)} / 10")
-
-    return "--- Source Credibility Report ---\n" + "\n".join(credibility_scores)
-
-# ✅ Register the tool with MCP with the required inputSchema
-source_credibility_tool = Tool(
-    name="source_credibility_tool",
-    description="Evaluates how credible given URLs are based on domain heuristics.",
-    inputSchema=SourceCredibilityInput.model_json_schema(),
-    func=lambda input_data: source_credibility_tool_func(**input_data)
-)
+# Export
+__all__ = ['source_credibility_tool', 'run', 'mcp']
 
 if __name__ == "__main__":
-    test_urls = [
-        "https://www.nih.gov/research/ai-healthcare",
-        "https://techcrunch.com/article-on-ai",
-        "https://randomblog.medium.com/opinion-on-ai"
+    test_sources = [
+        "https://www.cdc.gov/health-info",
+        "https://randomwebsite.com/article",
+        "https://nature.com/research"
     ]
-    # Test the underlying function directly
-    print(source_credibility_tool_func(test_urls))
-    
-    # Or test through the Tool's func with proper input format
-    print(source_credibility_tool.func({"urls": test_urls}))
+    print(run(test_sources))
