@@ -9,19 +9,9 @@ def llm_generate(prompt: str) -> str:
     # Placeholder LLM call
     return f"[LLM Answer]\nPrompt:\n{prompt[:500]}..."
 
-@mcp.tool()
-def rag_search(query: str, urls: Optional[List[str]] = None, top_k: int = 5) -> dict:
-    """
-    Full RAG: scrape URLs, store embeddings in Postgres, keyword index, retrieve, generate LLM answer.
-    
-    Args:
-        query: The search query
-        urls: Optional list of URLs to scrape and index
-        top_k: Number of top results to retrieve (default: 5)
-    
-    Returns:
-        Dictionary containing query, retrieved_docs, and llm_answer
-    """
+# Implementation function (no decorator)
+def _rag_search_impl(query: str, urls: Optional[List[str]] = None, top_k: int = 5) -> dict:
+    """Implementation of RAG search logic"""
     if urls is None:
         urls = []
     
@@ -49,6 +39,28 @@ def rag_search(query: str, urls: Optional[List[str]] = None, top_k: int = 5) -> 
         "llm_answer": answer
     }
 
-# Keep the run function for backwards compatibility if needed
+# Register with MCP - calls implementation
+@mcp.tool()
+def rag_search(query: str, urls: Optional[List[str]] = None, top_k: int = 5) -> dict:
+    """
+    Full RAG: scrape URLs, store embeddings in Postgres, keyword index, retrieve, generate LLM answer.
+    
+    Args:
+        query: The search query
+        urls: Optional list of URLs to scrape and index
+        top_k: Number of top results to retrieve (default: 5)
+    
+    Returns:
+        Dictionary containing query, retrieved_docs, and llm_answer
+    """
+    return _rag_search_impl(query=query, urls=urls, top_k=top_k)
+
+# Keep the run function for backwards compatibility - calls implementation
 def run(query: str, urls: List[str] = [], top_k: int = 5):
-    return rag_search(query=query, urls=urls, top_k=top_k)
+    return _rag_search_impl(query=query, urls=urls, top_k=top_k)
+
+# Export
+__all__ = ['rag_search', 'run', 'mcp']
+
+if __name__ == "__main__":
+    mcp.run()

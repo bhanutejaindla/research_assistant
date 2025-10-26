@@ -6,27 +6,14 @@ import os, json, re
 
 mcp = FastMCP("keyword-search-tool")
 
-@mcp.tool()
-def keyword_search(
+# Implementation function (no decorator)
+def _keyword_search_impl(
     action: Literal["store", "search"],
     doc_id: Optional[str] = None,
     text: Optional[str] = None,
     query: Optional[str] = None,
     top_k: int = 5
 ) -> dict:
-    """
-    Index or search documents using exact/substring keywords.
-    
-    Args:
-        action: Either "store" to index a document or "search" to query
-        doc_id: Document identifier (required for store action)
-        text: Document text content (required for store action)
-        query: Search query (required for search action)
-        top_k: Number of top results to return (default: 5)
-    
-    Returns:
-        Dictionary with status/results or error message
-    """
     os.makedirs(os.path.dirname(KEYWORD_DB_PATH), exist_ok=True)
 
     # Indexing
@@ -56,9 +43,33 @@ def keyword_search(
 
     return {"error": "Invalid parameters"}
 
+# Register with MCP
+@mcp.tool()
+def keyword_search(
+    action: Literal["store", "search"],
+    doc_id: Optional[str] = None,
+    text: Optional[str] = None,
+    query: Optional[str] = None,
+    top_k: int = 5
+) -> dict:
+    """
+    Index or search documents using exact/substring keywords.
+    
+    Args:
+        action: Either "store" to index a document or "search" to query
+        doc_id: Document identifier (required for store action)
+        text: Document text content (required for store action)
+        query: Search query (required for search action)
+        top_k: Number of top results to return (default: 5)
+    
+    Returns:
+        Dictionary with status/results or error message
+    """
+    return _keyword_search_impl(action=action, doc_id=doc_id, text=text, query=query, top_k=top_k)
+
 # Backwards compatibility
 def run(action: str, doc_id: str = None, text: str = None, query: str = None, top_k: int = 5):
-    return keyword_search(action=action, doc_id=doc_id, text=text, query=query, top_k=top_k)
+    return _keyword_search_impl(action=action, doc_id=doc_id, text=text, query=query, top_k=top_k)
 
 # Export
 __all__ = ['keyword_search', 'run', 'mcp']
