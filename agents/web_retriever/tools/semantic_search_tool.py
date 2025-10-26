@@ -1,7 +1,7 @@
 # agents/web_retriever/tools/semantic_search_tool.py
 from fastmcp import FastMCP
 from agents.web_retriever.config import POSTGRES_URI, EMBED_MODEL, VECTOR_DIM
-from sqlalchemy import create_engine, Column, Integer, Text
+from sqlalchemy import create_engine, Column, Integer, Text, text  # ADD: import text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from pgvector.sqlalchemy import Vector
 from typing import Optional, Literal, List
@@ -51,17 +51,18 @@ def store(url: str, text: str) -> dict:
 
 def search(query: str, top_k: int = 5) -> List[dict]:
     model = _load_model()
-    q_emb = model.encode([query], normalize_embeddings=True)[0].tolist()
+    q_emb = model.encode([query], normalize_embedings=True)[0].tolist()
     session = Session()
     
     try:
+        # CHANGE: Wrap SQL in text()
         results = session.execute(
-            f"""
+            text(f"""
             SELECT url, text, embedding <#> ARRAY{q_emb} AS distance
             FROM documents
             ORDER BY distance ASC
             LIMIT {top_k};
-            """
+            """)
         ).fetchall()
         
         return [
@@ -71,7 +72,7 @@ def search(query: str, top_k: int = 5) -> List[dict]:
     finally:
         session.close()
 
-# ADD THIS: Implementation function (no decorator)
+# Implementation function (no decorator)
 def _semantic_search_impl(
     action: Literal["store", "search"],
     url: Optional[str] = None,
@@ -87,7 +88,7 @@ def _semantic_search_impl(
     
     return {"error": "Invalid parameters. Store requires 'url' and 'text'. Search requires 'query'."}
 
-# CHANGE THIS: Make it call the implementation
+# Register with MCP
 @mcp.tool()
 def semantic_search(
     action: Literal["store", "search"],
@@ -111,7 +112,7 @@ def semantic_search(
     """
     return _semantic_search_impl(action=action, url=url, text=text, query=query, top_k=top_k)
 
-# CHANGE THIS: Call implementation instead of semantic_search
+# Backwards compatibility
 def run(action: str, url: str = None, text: str = None, query: str = None, top_k: int = 5):
     return _semantic_search_impl(action=action, url=url, text=text, query=query, top_k=top_k)
 
