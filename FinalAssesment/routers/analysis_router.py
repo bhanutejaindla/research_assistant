@@ -26,13 +26,43 @@ async def start_analysis(project_id: int, db: Session = Depends(get_db)):
     return {"message": "Analysis started", "project_id": project_id}
 
 
-@router.get("/projects/{project_id}/events")
-async def stream_events(project_id: int):
-    async def event_generator():
-        async for event in event_manager.listen(project_id):
-            yield f"data: {event}\n\n"
+# @router.get("/projects/{project_id}/events")
+# async def stream_events(project_id: int):
+#     async def event_generator():
+#         async for event in event_manager.listen(project_id):
+#             yield f"data: {event}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+#     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@router.get("/projects/{project_id}/events")
+async def stream_events(project_id: int, db: Session = Depends(get_db)):
+    # Verify project exists
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    async def event_generator():
+        try:
+            async for event in event_manager.listen(project_id):
+                if event == ":keepalive":
+                    yield ": keepalive\n\n"
+                else:
+                    yield f"data: {event}\n\n"
+        except asyncio.CancelledError:
+            # Client disconnected
+            pass
+        except Exception as e:
+            yield f"data: Error - {str(e)}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 async def run_analysis_pipeline(project: Project, db: Session):
