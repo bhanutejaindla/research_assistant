@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Upload Project</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <h2>Upload Project</h2>
+    <input id="github-url" type="text" placeholder="GitHub URL (optional)" />
+    <input id="zip-file" type="file" accept=".zip" />
+    <button onclick="uploadProject()">Upload</button>
+
+    <div id="events"></div>
+  </div>
+
+  <script>
+    const API_BASE = "http://localhost:8000";
+    const token = localStorage.getItem("token");
+
+    async function uploadProject() {
+      const githubUrl = document.getElementById("github-url").value;
+      const file = document.getElementById("zip-file").files[0];
+
+      if (!githubUrl && !file) {
+        alert("Please provide a GitHub URL or ZIP file.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("token", token);
+      if (githubUrl) formData.append("github_url", githubUrl);
+      if (file) formData.append("file", file);
+
+      const res = await fetch(`${API_BASE}/projects/upload`, {
+        method: "POST",
+        body: formData
+      });
+
+      const result = await res.json();
+      if (result.project_id) {
+        listenToEvents(result.project_id);
+      } else {
+        alert(result.detail || "Upload failed");
+      }
+    }
+
+    function listenToEvents(projectId) {
+      const eventBox = document.getElementById("events");
+      const evtSource = new EventSource(`${API_BASE}/projects/events/${projectId}`);
+
+      eventBox.innerHTML = "Listening for events...\n";
+      evtSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        eventBox.innerText += `[${new Date().toLocaleTimeString()}] ${data.message}\n`;
+        eventBox.scrollTop = eventBox.scrollHeight;
+      };
+
+      evtSource.onerror = () => {
+        eventBox.innerText += "\n❌ Connection closed.\n";
+        evtSource.close();
+      };
+    }
+  </script>
+</body>
+</html>

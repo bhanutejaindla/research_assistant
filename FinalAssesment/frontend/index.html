@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Auth</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <h2>Register</h2>
+    <input id="reg-name" type="text" placeholder="Name" />
+    <input id="reg-email" type="email" placeholder="Email" />
+    <input id="reg-password" type="password" placeholder="Password" />
+    <input id="reg-role" type="text" placeholder="Role" />
+    <button onclick="register()">Register</button>
+
+    <hr />
+
+    <h2>Login</h2>
+    <input id="login-email" type="email" placeholder="Email" />
+    <input id="login-password" type="password" placeholder="Password" />
+    <button onclick="login()">Login</button>
+  </div>
+
+  <script>
+    const API_BASE = "http://localhost:8000";
+
+    async function register() {
+      const data = {
+        name: document.getElementById("reg-name").value,
+        email: document.getElementById("reg-email").value,
+        password: document.getElementById("reg-password").value,
+        role: document.getElementById("reg-role").value
+      };
+      const res = await fetch(`${API_BASE}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      const result = await res.json();
+      alert(result.msg || result.detail);
+    }
+
+    async function login() {
+      const data = {
+        email: document.getElementById("login-email").value,
+        password: document.getElementById("login-password").value
+      };
+      const res = await fetch(`${API_BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      const result = await res.json();
+      if (result.access_token) {
+        localStorage.setItem("token", result.access_token);
+        alert("Login successful!");
+        window.location.href = "upload.html";
+      } else {
+        alert(result.detail || "Login failed");
+      }
+    }
+  </script>
+</body>
+</html>
