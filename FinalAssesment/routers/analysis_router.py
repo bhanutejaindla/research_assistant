@@ -1,39 +1,28 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+# routers/analysis_router.py
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy.orm import Session
 from database.db import get_db
 from models.model import Project
+from services.event_manager import EventManager
 from services.repo_extractor import extract_repo
 from services.preprocessing import preprocess_repository
-from services.event_manager import EventManager
 import asyncio
 
 router = APIRouter()
 event_manager = EventManager()
 
-# ✅ Use BackgroundTasks OR create a new DB session in async task
 @router.post("/projects/{project_id}/analyze")
-async def start_analysis(
-    project_id: int,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(select(Project).filter(Project.id == project_id))
-    project = result.scalar_one_or_none()
+async def start_analysis(project_id: int, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    # use background_tasks (avoids sharing DB session across threads)
-    background_tasks.add_task(run_analysis_pipeline, project_id)
+    asyncio.create_task(run_analysis_pipeline(project, db))
     return {"message": "Analysis started", "project_id": project_id}
 
-
-# ✅ Streaming endpoint for SSE
 @router.get("/projects/{project_id}/events")
-async def stream_events(project_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Project).filter(Project.id == project_id))
-    project = result.scalar_one_or_none()
+async def stream_events(project_id: int, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -45,7 +34,6 @@ async def stream_events(project_id: int, db: AsyncSession = Depends(get_db)):
                 else:
                     yield f"data: {event}\n\n"
         except asyncio.CancelledError:
-            # client disconnected
             pass
         except Exception as e:
             yield f"data: Error - {str(e)}\n\n"
@@ -57,42 +45,32 @@ async def stream_events(project_id: int, db: AsyncSession = Depends(get_db)):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
-        },
+        }
     )
 
+@router.get("/projects/{project_id}/poll")
+async def poll_events(
+    project_id: int,
+    last_index: int = Query(0),
+    db: Session = Depends(get_db)
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-# ✅ Fixed background pipeline
-async def run_analysis_pipeline(project_id: int):
-    """
-    Runs repository extraction + preprocessing asynchronously.
-    Creates a new DB session to avoid threading issues.
-    """
-    from database.db import AsyncSessionLocal  # local import avoids circular dependency
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Project).filter(Project.id == project_id))
-        project = result.scalar_one_or_none()
-        if not project:
-            await event_manager.send(project_id, "❌ Project not found in background task.")
-            return
+    new_events, new_index = await event_manager.get_events(project_id, last_index)
+    return {"events": new_events, "last_index": new_index}
 
-        try:
-            project.status = "PROCESSING"
-            await db.commit()
-            await event_manager.send(project_id, "🚀 Analysis started")
+async def run_analysis_pipeline(project: Project, db: Session):
+    project.status = "PROCESSING"
+    db.commit()
+    project_id = project.id
 
-            # ✅ Pass project_id separately, not the whole object
-            repo_path = await extract_repo(project, project_id)
-            metadata = await preprocess_repository(repo_path, project_id)
+    await event_manager.send(project_id, "🚀 Analysis started")
 
-            project.status = "COMPLETED"
-            await db.commit()
+    repo_path = await extract_repo(project, event_manager)
+    metadata = await preprocess_repository(repo_path, event_manager, project_id)
 
-            await event_manager.send(
-                project_id,
-                f"🎉 Preprocessing done! {metadata.get('total_files', 0)} files analyzed.",
-            )
-
-        except Exception as e:
-            await event_manager.send(project_id, f"❌ Error during analysis: {e}")
-            project.status = "FAILED"
-            await db.commit()
+    project.status = "COMPLETED"
+    db.commit()
+    await event_manager.send(project_id, f"✅ Preprocessing done. {metadata['total_files']} files analyzed.")
