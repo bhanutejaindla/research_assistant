@@ -1,6 +1,9 @@
 import streamlit as st
 import requests
 import time
+import threading
+import tempfile
+import os
 from typing import Optional
 
 # Simple Streamlit client for the Research Assistant backend.
@@ -34,21 +37,52 @@ def ensure_session_state():
 
 
 def signup(username: str, password: str, role: str) -> Optional[str]:
-    users = st.session_state["users"]
-    if username in users:
-        return "Username already exists"
-    users[username] = {"password": password, "role": role}
-    st.session_state["current_user"] = {"username": username, "role": role}
-    return None
+    # Attempt backend registration; fall back to local in-memory if backend is unavailable
+    payload = {"username": username, "password": password, "role": role}
+    try:
+        resp = requests.post(f"{BACKEND_URL}/auth/register", json=payload, timeout=8)
+        if resp.status_code in (200, 201):
+            body = resp.json()
+            # Expect backend to return user info {"username":..., "role":...}
+            user = body.get("user") or body
+            st.session_state["current_user"] = {"username": user.get("username", username), "role": user.get("role", role)}
+            # Optionally persist token/session if backend provides one
+            if "token" in body:
+                st.session_state["auth_token"] = body["token"]
+            return None
+        else:
+            return f"Registration failed: {resp.status_code} {resp.text}"
+    except requests.exceptions.RequestException:
+        # Fallback to in-memory simple signup for local demo
+        users = st.session_state["users"]
+        if username in users:
+            return "Username already exists (local)"
+        users[username] = {"password": password, "role": role}
+        st.session_state["current_user"] = {"username": username, "role": role}
+        return None
 
 
 def signin(username: str, password: str) -> Optional[str]:
-    users = st.session_state["users"]
-    user = users.get(username)
-    if not user or user.get("password") != password:
-        return "Invalid username or password"
-    st.session_state["current_user"] = {"username": username, "role": user.get("role")}
-    return None
+    payload = {"username": username, "password": password}
+    try:
+        resp = requests.post(f"{BACKEND_URL}/auth/login", json=payload, timeout=8)
+        if resp.status_code == 200:
+            body = resp.json()
+            user = body.get("user") or body
+            st.session_state["current_user"] = {"username": user.get("username", username), "role": user.get("role", "User")}
+            if "token" in body:
+                st.session_state["auth_token"] = body["token"]
+            return None
+        else:
+            return f"Login failed: {resp.status_code} {resp.text}"
+    except requests.exceptions.RequestException:
+        # Fallback to local in-memory signin for demo
+        users = st.session_state["users"]
+        user = users.get(username)
+        if not user or user.get("password") != password:
+            return "Invalid username or password (local)"
+        st.session_state["current_user"] = {"username": username, "role": user.get("role")}
+        return None
 
 
 def signout():
@@ -119,6 +153,9 @@ def upload_and_start_ui():
         depth = st.selectbox("Analysis depth", ["Quick", "Standard", "Deep"], index=1)
         web_aug = st.checkbox("Enable web augmentation (search docs)", value=True)
 
+    # Option to run agents locally (import from agents/) instead of calling backend
+    run_locally = st.checkbox("Run locally (use agents in this repo)", value=False)
+
     with col2:
         st.write("\n")
         st.write("\n")
@@ -140,26 +177,69 @@ def upload_and_start_ui():
             files = {}
             data = {"analysis_depth": depth, "personas": ",".join(personas), "web_augmented": str(web_aug)}
 
-            try:
-                if github_url:
-                    data["github_url"] = github_url.strip()
-                    resp = requests.post(f"{BACKEND_URL}/real-time-analyze", data=data, timeout=10)
-                else:
-                    # multipart upload with file
-                    files = {"zip_file": (zip_file.name, zip_file.getvalue())}
-                    resp = requests.post(f"{BACKEND_URL}/real-time-analyze", data=data, files=files, timeout=10)
+            # If running locally, call agents directly; otherwise call backend
+            if run_locally:
+                # Save zip to temp file if provided
+                zip_path = None
+                if zip_file:
+                    tf = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+                    tf.write(zip_file.getvalue())
+                    tf.flush()
+                    tf.close()
+                    zip_path = tf.name
 
-                if resp.status_code in (200, 201):
-                    body = resp.json()
-                    job_id = body.get("job_id")
-                    st.session_state["job_id"] = job_id
-                    st.success(f"Analysis started — job_id: {job_id}")
-                    st.session_state["feed"] = []
-                else:
-                    st.error(f"Failed to start analysis: {resp.status_code} {resp.text}")
+                # Start a background thread that runs agents from the repo
+                def local_runner():
+                    try:
+                        # Use the orchestrated workflow from agents.orchestration
+                        from agents.orchestration.work_flow import run_full_pipeline
+                        from agents.orchestration.state import get_initial_state
 
-            except Exception as e:
-                st.error(f"Error starting analysis: {e}")
+                        # Prepare initial state and inject inputs
+                        state = get_initial_state()
+                        state["zip_path"] = zip_path if zip_path else None
+                        state["github_url"] = github_url
+                        state["config"]["analysis_depth"] = depth
+                        state["config"]["personas"] = personas
+                        state["config"]["web_augmented"] = web_aug
+
+                        # Run full orchestrated pipeline
+                        result_state = run_full_pipeline(state)
+
+                        # Update UI state
+                        st.session_state["feed"] = result_state.get("agent_log", [])
+                        st.session_state["local_final_output"] = result_state.get("final_results") or result_state.get("final_output") or result_state
+                        st.session_state["job_id"] = f"local-{int(time.time())}"
+                        st.success(f"Local analysis finished — job_id: {st.session_state['job_id']}")
+                    except Exception as e:
+                        # Ensure we capture errors in the feed
+                        st.session_state.setdefault("feed", []).append(f"Local analysis failed: {e}")
+                        st.error(f"Local analysis failed: {e}")
+
+                thread = threading.Thread(target=local_runner, daemon=True)
+                thread.start()
+
+            else:
+                try:
+                    if github_url:
+                        data["github_url"] = github_url.strip()
+                        resp = requests.post(f"{BACKEND_URL}/real-time-analyze", data=data, timeout=10)
+                    else:
+                        # multipart upload with file
+                        files = {"zip_file": (zip_file.name, zip_file.getvalue())}
+                        resp = requests.post(f"{BACKEND_URL}/real-time-analyze", data=data, files=files, timeout=10)
+
+                    if resp.status_code in (200, 201):
+                        body = resp.json()
+                        job_id = body.get("job_id")
+                        st.session_state["job_id"] = job_id
+                        st.success(f"Analysis started — job_id: {job_id}")
+                        st.session_state["feed"] = []
+                    else:
+                        st.error(f"Failed to start analysis: {resp.status_code} {resp.text}")
+
+                except Exception as e:
+                    st.error(f"Error starting analysis: {e}")
 
 
 def progress_ui():
