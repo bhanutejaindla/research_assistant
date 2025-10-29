@@ -5,61 +5,55 @@ import threading
 import tempfile
 import os
 from typing import Optional
-from agents.preprocessing_agent import preprocessing_agent
-import openai
-
-# Set your OpenAI API key
-openai.api_key = "sk-4zZtqKJtqKJtqKJtqKJtqKJtqKJtqKJ"  # Replace with your actual OpenAI API key
-
-# Simple Streamlit client for the Research Assistant backend.
-# Features:
-# - Signup / Signin (in-memory session for demo)
-# - Upload ZIP or provide GitHub URL
-# - Start an analysis job (POST /real-time-analyze)
-# - Poll job progress (GET /analyze/progress/{job_id})
-# - Simple Chatbox that will attempt to call a job-scoped ask endpoint (POST /ask/{job_id}) if available
-
-# Configuration
-BACKEND_URL = "http://localhost:8080"  # Hardcoded to use port 8080
-POLL_INTERVAL = 1.0  # seconds
+from openai import OpenAI
+from dotenv import load_dotenv
 
 # ---------------------------
-# Helpers
+# Setup
+# ---------------------------
+
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # Store key in .env safely
+
+BACKEND_URL = "http://localhost:8080"  # Adjust if your FastAPI backend runs elsewhere
+POLL_INTERVAL = 1.0  # seconds
+
+
+# ---------------------------
+# Session Helpers
 # ---------------------------
 
 def ensure_session_state():
-    if "users" not in st.session_state:
-        st.session_state["users"] = {}  # format: {email: {password: str, role: str}}
-    if "current_user" not in st.session_state:
-        st.session_state["current_user"] = None
-    if "job_id" not in st.session_state:
-        st.session_state["job_id"] = None
-    if "feed" not in st.session_state:
-        st.session_state["feed"] = []
-    if "chat_history" not in st.session_state:
-        st.session_state["chat_history"] = []
-    if "auth_token" not in st.session_state:
-        st.session_state["auth_token"] = None  # Initialize auth_token to avoid KeyError
+    defaults = {
+        "users": {},
+        "current_user": None,
+        "job_id": None,
+        "feed": [],
+        "chat_history": [],
+        "auth_token": None,
+        "important_files": [],
+        "detailed_file_info": [],
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
 def signup(email: str, password: str, role: str) -> Optional[str]:
-    # Attempt backend registration; fall back to local in-memory if backend is unavailable
     payload = {"email": email, "password": password, "role": role}
     try:
         resp = requests.post(f"{BACKEND_URL}/auth/register", json=payload, timeout=8)
         if resp.status_code in (200, 201):
             body = resp.json()
-            # Expect backend to return user info {"username":..., "role":...}
-            user = body.get("user") or body
-            st.session_state["current_user"] = {"email": user.get("email", email), "role": user.get("role", role)}
-            # Optionally persist token/session if backend provides one
+            st.session_state["current_user"] = {
+                "email": body.get("email", email),
+                "role": body.get("role", role),
+            }
             if "token" in body:
                 st.session_state["auth_token"] = body["token"]
             return None
-        else:
-            return f"Registration failed: {resp.status_code} {resp.text}"
+        return f"Registration failed: {resp.status_code} {resp.text}"
     except requests.exceptions.RequestException:
-        # Fallback to in-memory simple signup for local demo
         users = st.session_state["users"]
         if email in users:
             return "Email already exists (local)"
@@ -74,49 +68,51 @@ def signin(email: str, password: str) -> Optional[str]:
         resp = requests.post(f"{BACKEND_URL}/auth/login", json=payload, timeout=8)
         if resp.status_code == 200:
             body = resp.json()
-            user = body.get("user") or body
-            st.session_state["current_user"] = {"email": user.get("email", email), "role": user.get("role", "User")}
+            st.session_state["current_user"] = {
+                "email": body.get("email", email),
+                "role": body.get("role", "User"),
+            }
             if "token" in body:
                 st.session_state["auth_token"] = body["token"]
             return None
-        else:
-            return f"Login failed: {resp.status_code} {resp.text}"
+        return f"Login failed: {resp.status_code} {resp.text}"
     except requests.exceptions.RequestException:
-        # Fallback to local in-memory signin for demo
         users = st.session_state["users"]
         user = users.get(email)
         if not user or user.get("password") != password:
             return "Invalid email or password (local)"
-        st.session_state["current_user"] = {"email": email, "role": user.get("role")}
+        st.session_state["current_user"] = {"email": email, "role": "User"}
         return None
 
 
 def signout():
-    st.session_state["current_user"] = None
-    st.session_state["job_id"] = None
-    st.session_state["feed"] = []
-    st.session_state["chat_history"] = []
-
-
-def query_llm(prompt):
-    """Query the OpenAI GPT-4.0 model with a refined prompt."""
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4.0",  # Use the GPT-4.0 model
-            messages=[
-                {"role": "system", "content": "You are an expert in software repositories."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=300,
-            temperature=0.7
-        )
-        return response['choices'][0]['message']['content'].strip()
-    except Exception as e:
-        return f"Error querying LLM: {e}"
+    for key in ["current_user", "job_id", "feed", "chat_history"]:
+        st.session_state[key] = None
 
 
 # ---------------------------
-# UI Pieces
+# LLM Query (modern OpenAI syntax)
+# ---------------------------
+
+def query_llm(prompt: str) -> str:
+    """Query OpenAI GPT-4 model with updated SDK syntax."""
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # Or "gpt-4o" for best performance
+            messages=[
+                {"role": "system", "content": "You are an expert software repository analyst."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            max_tokens=400,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"⚠️ Error querying LLM: {e}"
+
+
+# ---------------------------
+# UI — Upload and Start
 # ---------------------------
 
 def upload_and_start_ui():
@@ -124,137 +120,61 @@ def upload_and_start_ui():
 
     col1, col2 = st.columns([2, 1])
     with col1:
-        source = st.radio("Repository source", ["GitHub URL", "ZIP upload"], index=0)
+        source = st.radio("Repository Source", ["GitHub URL", "ZIP upload"], index=0)
 
-        github_url = None
-        zip_file = None
+        github_url, zip_file = None, None
         if source == "GitHub URL":
-            github_url = st.text_input("GitHub repository URL (e.g. https://github.com/owner/repo)")
+            github_url = st.text_input("GitHub URL (e.g. https://github.com/user/repo)")
         else:
-            zip_file = st.file_uploader("Upload a ZIP file", type=["zip"]) 
+            zip_file = st.file_uploader("Upload ZIP file", type=["zip"])
 
-        personas = st.multiselect("Target personas", ["SDE", "PM"], default=["SDE"]) 
+        personas = st.multiselect("Target personas", ["SDE", "PM"], default=["SDE"])
         depth = st.selectbox("Analysis depth", ["Quick", "Standard", "Deep"], index=1)
         web_aug = st.checkbox("Enable web augmentation (search docs)", value=True)
 
-    # Option to run agents locally (import from agents/) instead of calling backend
-    run_locally = st.checkbox("Run locally (use agents in this repo)", value=False)
+    run_locally = st.checkbox("Run locally (use agents in repo)", value=False)
 
     with col2:
-        st.write("\n")
-        st.write("\n")
-        st.write("\n")
+        st.write("\n" * 5)
         if st.button("Start Analysis"):
-            if source == "GitHub URL" and (not github_url or github_url.strip() == ""):
+            if source == "GitHub URL" and not github_url:
                 st.error("Please provide a GitHub URL.")
                 return
-
-            if source == "ZIP upload" and zip_file is None:
+            if source == "ZIP upload" and not zip_file:
                 st.error("Please upload a ZIP file.")
                 return
 
-            # Preprocessing step
             try:
                 if zip_file:
-                    tf = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-                    tf.write(zip_file.getvalue())
-                    tf.flush()
-                    tf.close()
-                    zip_path = tf.name
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tf:
+                        tf.write(zip_file.getvalue())
+                        tf.flush()
+                        zip_path = tf.name
 
-                    # Call preprocessing agent
+                    # --- Local preprocessing ---
                     from agents.preprocessing_agent import preprocess_repository
-
                     repo_details = preprocess_repository(zip_path=zip_path)
+
                     st.session_state["preprocessed_files"] = repo_details.get("files", [])
                     st.session_state["repository_about"] = repo_details.get("about", "Unknown")
                     st.session_state["entry_point"] = repo_details.get("entry_point", "Unknown")
 
-                    st.success("Preprocessing completed successfully.")
-
-                    # Display preprocessing results
-                    st.write("### Repository Details")
-                    st.write(f"**About**: {st.session_state['repository_about']}")
-                    st.write(f"**Entry Point**: {st.session_state['entry_point']}")
-
-                    st.write("### Extracted Files")
-                    for file in st.session_state["preprocessed_files"]:
-                        st.write(f"- {file}")
-
+                    st.success("✅ Preprocessing completed successfully!")
+                    st.write("**Repository Summary**")
+                    st.write(f"- About: {st.session_state['repository_about']}")
+                    st.write(f"- Entry Point: {st.session_state['entry_point']}")
+                    st.write("### Files")
+                    for f in st.session_state["preprocessed_files"]:
+                        st.write(f"- {f}")
                 else:
-                    st.error("Preprocessing requires a ZIP file.")
-
+                    st.error("Please upload a ZIP file for preprocessing.")
             except Exception as e:
                 st.error(f"Error during preprocessing: {e}")
 
-            # Build form data
-            files = {}
-            data = {"analysis_depth": depth, "personas": ",".join(personas), "web_augmented": str(web_aug)}
 
-            # If running locally, call agents directly; otherwise call backend
-            if run_locally:
-                # Save zip to temp file if provided
-                zip_path = None
-                if zip_file:
-                    tf = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-                    tf.write(zip_file.getvalue())
-                    tf.flush()
-                    tf.close()
-                    zip_path = tf.name
-
-                # Start a background thread that runs agents from the repo
-                def local_runner():
-                    try:
-                        # Use the orchestrated workflow from agents.orchestration
-                        from agents.orchestration.work_flow import run_full_pipeline
-                        from agents.orchestration.state import get_initial_state
-
-                        # Prepare initial state and inject inputs
-                        state = get_initial_state()
-                        state["zip_path"] = zip_path if zip_path else None
-                        state["github_url"] = github_url
-                        state["config"]["analysis_depth"] = depth
-                        state["config"]["personas"] = personas
-                        state["config"]["web_augmented"] = web_aug
-
-                        # Run full orchestrated pipeline
-                        result_state = run_full_pipeline(state)
-
-                        # Update UI state
-                        st.session_state["feed"] = result_state.get("agent_log", [])
-                        st.session_state["local_final_output"] = result_state.get("final_results") or result_state.get("final_output") or result_state
-                        st.session_state["job_id"] = f"local-{int(time.time())}"
-                        st.success(f"Local analysis finished — job_id: {st.session_state['job_id']}")
-                    except Exception as e:
-                        # Ensure we capture errors in the feed
-                        st.session_state.setdefault("feed", []).append(f"Local analysis failed: {e}")
-                        st.error(f"Local analysis failed: {e}")
-
-                thread = threading.Thread(target=local_runner, daemon=True)
-                thread.start()
-
-            else:
-                try:
-                    if github_url:
-                        data["github_url"] = github_url.strip()
-                        resp = requests.post(f"{BACKEND_URL}/real-time-analyze", data=data, timeout=10)
-                    else:
-                        # multipart upload with file
-                        files = {"zip_file": (zip_file.name, zip_file.getvalue())}
-                        resp = requests.post(f"{BACKEND_URL}/real-time-analyze", data=data, files=files, timeout=10)
-
-                    if resp.status_code in (200, 201):
-                        body = resp.json()
-                        job_id = body.get("job_id")
-                        st.session_state["job_id"] = job_id
-                        st.success(f"Analysis started — job_id: {job_id}")
-                        st.session_state["feed"] = []
-                    else:
-                        st.error(f"Failed to start analysis: {resp.status_code} {resp.text}")
-
-                except Exception as e:
-                    st.error(f"Error starting analysis: {e}")
-
+# ---------------------------
+# Progress UI (Polling Backend)
+# ---------------------------
 
 def progress_ui():
     job_id = st.session_state.get("job_id")
@@ -265,12 +185,11 @@ def progress_ui():
     placeholder = st.empty()
     progress_bar = st.progress(0)
 
-    # Poll for updates until job completes
     while True:
         try:
             r = requests.get(f"{BACKEND_URL}/analyze/progress/{job_id}", timeout=10)
         except Exception as e:
-            placeholder.error(f"Could not contact backend for progress: {e}")
+            placeholder.error(f"Could not contact backend: {e}")
             break
 
         if r.status_code == 200:
@@ -281,137 +200,111 @@ def progress_ui():
             current_file = status.get("current_file")
 
             progress_bar.progress(int(percent))
-
             with placeholder.container():
-                st.write(f"**Stage**: {stage} — **{percent}%**")
+                st.write(f"**Stage**: {stage} — {percent}%")
                 if current_file:
-                    st.write(f"**Current file**: {current_file}")
-
+                    st.write(f"**Current file:** {current_file}")
                 st.write("**Activity Feed**")
-                # Display the feed messages
-                for item in feed[-20:]:
-                    t = item.get("type", "info")
+                for item in feed[-15:]:
+                    msg_type = item.get("type", "info")
                     msg = item.get("message", "")
-                    if t == "error":
+                    if msg_type == "error":
                         st.error(msg)
-                    elif t == "milestone":
+                    elif msg_type == "milestone":
                         st.success(msg)
                     else:
                         st.info(msg)
-
-            # Display extracted files if the stage is completed
-            if status.get("stage") == "Completed" and "extracted_files" in status:
-                st.write("### Extracted Files")
-                for file in status["extracted_files"]:
-                    st.write(f"- {file}")
-
-            if status.get("stage") in ("Completed", "Error") or int(percent) >= 100:
-                st.success("Analysis finished" if status.get("stage") == "Completed" else "Analysis ended with error")
+            if status.get("stage") in ("Completed", "Error"):
                 break
-
         else:
-            placeholder.error(f"Progress request failed: {r.status_code} {r.text}")
+            placeholder.error(f"Progress error: {r.status_code}")
             break
-
         time.sleep(POLL_INTERVAL)
 
+
+# ---------------------------
+# Preprocessing UI
+# ---------------------------
 
 def upload_and_preprocess_ui():
     st.header("Upload Repository for Analysis")
 
-    # File upload section
-    zip_file = st.file_uploader("Upload a ZIP file", type=["zip"], help="Upload a ZIP file containing the repository.")
-
+    zip_file = st.file_uploader("Upload ZIP file", type=["zip"])
     if zip_file:
-        # Save the uploaded file to a temporary location
         with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_file:
             temp_file.write(zip_file.getvalue())
             temp_file_path = temp_file.name
 
-        # Prepare the state dictionary
-        state = {"zip_path": temp_file_path}
+        from agents.preprocessing_agent import preprocessing_agent
 
-        # Call the preprocessing agent directly
         try:
+            state = {"zip_path": temp_file_path}
             state = preprocessing_agent(state)
-
-            # Filter important files (e.g., entry points, configuration files)
             important_files = [
-                file for file in state.get("file_list", [])
-                if file.endswith((".py", ".yaml", ".json", "Dockerfile", "Makefile"))
+                f for f in state.get("file_list", [])
+                if f.endswith((".py", ".yaml", ".json", "Dockerfile", "Makefile"))
             ]
-
-            # Update session state
             st.session_state["important_files"] = important_files
-            st.session_state["detailed_file_info"] = state.get("detailed_file_info", [])
-
-            # Display preprocessing results
-            st.write("### Preprocessed Files")
-            for file in important_files:
-                st.write(f"- {file}")
-
-            st.success("Preprocessing completed successfully. You can now query the repository.")
+            st.write("### Important Files")
+            for f in important_files:
+                st.write(f"- {f}")
+            st.success("Preprocessing done.")
         except Exception as e:
-            st.error(f"Error during preprocessing: {e}")
-
-
-def query_ui():
-    st.header("Query the Repository")
-
-    if "important_files" not in st.session_state or not st.session_state["important_files"]:
-        st.info("Please upload a repository to preprocess first.")
-        return
-
-    # Query input
-    query = st.text_input("Enter your query about the repository:", help="Ask questions about the repository structure, files, or content.")
-
-    if st.button("Submit Query"):
-        if not query.strip():
-            st.error("Please enter a query.")
-            return
-
-        # Refine the query prompt for the LLM
-        refined_prompt = (
-            "Based on the following preprocessed files, answer the user's query in detail.\n\n"
-            f"Preprocessed Files: {', '.join(st.session_state['important_files'])}\n\n"
-            f"User Query: {query}"
-        )
-
-        # Pass the refined prompt to the LLM
-        try:
-            llm_response = query_llm(refined_prompt)
-            st.write("### Query Results")
-            st.write(llm_response)
-        except Exception as e:
-            st.error(f"Error querying the LLM: {e}")
+            st.error(f"Error: {e}")
 
 
 # ---------------------------
-# App layout
+# Query UI (Chat with LLM)
+# ---------------------------
+
+def query_ui():
+    st.header("Ask the Repository Assistant")
+
+    if not st.session_state.get("important_files"):
+        st.info("Upload and preprocess a repository first.")
+        return
+
+    query = st.text_input("Enter your question:")
+    if st.button("Ask"):
+        if not query.strip():
+            st.error("Please enter a valid query.")
+            return
+
+        files = ", ".join(st.session_state["important_files"][:20])
+        refined_prompt = (
+            f"The following are key files from a repository:\n{files}\n\n"
+            f"User asks: {query}\n"
+            "Provide a detailed and accurate response."
+        )
+        with st.spinner("Thinking..."):
+            response = query_llm(refined_prompt)
+        st.write("### Answer")
+        st.write(response)
+
+
+# ---------------------------
+# Main App Layout
 # ---------------------------
 
 def main():
-    st.set_page_config(page_title="Research Assistant — Client", layout="wide")
+    st.set_page_config(page_title="Repository Research Assistant", layout="wide")
     ensure_session_state()
 
-    st.title("Research Assistant — Repository Analysis")
+    st.title("🧠 Repository Research Assistant")
 
-    # Main columns: left for actions, right for progress
     left, right = st.columns([2, 3])
-
     with left:
         upload_and_start_ui()
-
     with right:
         progress_ui()
 
-    st.markdown("---")
+    st.divider()
 
     with left:
         upload_and_preprocess_ui()
-
     with right:
         query_ui()
+
 
 if __name__ == "__main__":
     main()
