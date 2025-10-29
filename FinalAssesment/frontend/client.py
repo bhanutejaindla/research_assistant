@@ -5,6 +5,7 @@ import threading
 import tempfile
 import os
 from typing import Optional
+from agents.preprocessing_agent import preprocessing_agent
 
 # Simple Streamlit client for the Research Assistant backend.
 # Features:
@@ -310,26 +311,22 @@ def upload_and_preprocess_ui():
             temp_file.write(zip_file.getvalue())
             temp_file_path = temp_file.name
 
-        # Call the preprocessing agent via the backend API
+        # Prepare the state dictionary
+        state = {"zip_path": temp_file_path}
+
+        # Call the preprocessing agent directly
         try:
-            files = {"zip_file": (zip_file.name, zip_file.getvalue())}
-            response = requests.post(f"{BACKEND_URL}/preprocess", files=files, timeout=15)
+            state = preprocessing_agent(state)
 
-            if response.status_code == 200:
-                result = response.json()
+            # Display preprocessing results
+            st.write("### Preprocessing Results")
+            st.write(f"**Extracted Files:**")
+            for file in state.get("file_list", []):
+                st.write(f"- {file}")
 
-                # Display preprocessing results
-                st.write("### Preprocessing Results")
-                st.write(f"**Extracted Files:**")
-                for file in result.get("file_list", []):
-                    st.write(f"- {file}")
-
-                st.session_state["preprocessed_files"] = result.get("file_list", [])
-                st.session_state["detailed_file_info"] = result.get("detailed_file_info", [])
-                st.success("Preprocessing completed successfully.")
-            else:
-                st.error(f"Preprocessing failed: {response.status_code} {response.text}")
-
+            st.session_state["preprocessed_files"] = state.get("file_list", [])
+            st.session_state["detailed_file_info"] = state.get("detailed_file_info", [])
+            st.success("Preprocessing completed successfully.")
         except Exception as e:
             st.error(f"Error during preprocessing: {e}")
 
