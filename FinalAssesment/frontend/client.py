@@ -333,3 +333,31 @@ def query_ui():
                 mime="application/pdf"
             )
 
+# ---------------------------
+# Main Streamlit App Layout
+# ---------------------------
+
+def main():
+    st.set_page_config(page_title="Repository Intelligence System", layout="wide")
+
+    ensure_session_state()
+
+    st.title("🧠 Repository Intelligence & Documentation System")
+
+    menu = st.sidebar.radio(
+        "Navigation",
+        ["🏁 Start Analysis", "📊 Progress", "💬 Query / Documentation"],
+        index=0
+    )
+
+    if menu == "🏁 Start Analysis":
+        upload_and_start_ui()
+    elif menu == "📊 Progress":
+        progress_ui()
+    elif menu == "💬 Query / Documentation":
+        query_ui()
+
+
+if __name__ == "__main__":
+    main()
+
