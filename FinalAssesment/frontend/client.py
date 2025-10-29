@@ -97,47 +97,6 @@ def signout():
 # UI Pieces
 # ---------------------------
 
-def auth_ui():
-    st.sidebar.header("Account")
-    if st.session_state["current_user"]:
-        st.sidebar.write(f"Signed in as **{st.session_state['current_user']['email']}** ({st.session_state['current_user']['role']})")
-        if st.sidebar.button("Sign out"):
-            signout()
-            st.experimental_rerun()  # Ensure this is a function call
-        return
-
-    tab = st.sidebar.radio("Auth", ["Sign in", "Sign up"])
-
-    if tab == "Sign up":
-        with st.sidebar.form("signup_form"):
-            st.markdown("### Create an Account")
-            su_email = st.text_input("Email", placeholder="Enter your email")
-            su_pass = st.text_input("Password", type="password", placeholder="Enter your password")
-            su_role = st.selectbox("Role", ["User", "Admin"], help="Select your role")
-            submitted = st.form_submit_button("Create Account", type="primary")
-            if submitted:
-                err = signup(su_email.strip(), su_pass, su_role)
-                if err:
-                    st.sidebar.error(err)
-                else:
-                    st.sidebar.success("Account created and signed in")
-                    st.experimental_rerun()  # Ensure this is a function call
-
-    else:
-        with st.sidebar.form("signin_form"):
-            st.markdown("### Sign In")
-            si_email = st.text_input("Email", placeholder="Enter your email")
-            si_pass = st.text_input("Password", type="password", placeholder="Enter your password")
-            submitted = st.form_submit_button("Sign In", type="primary")
-            if submitted:
-                err = signin(si_email.strip(), si_pass)
-                if err:
-                    st.sidebar.error(err)
-                else:
-                    st.sidebar.success("Signed in")
-                    st.experimental_rerun()  # Ensure this is a function call
-
-
 def upload_and_start_ui():
     st.header("Start Repository Analysis")
 
@@ -299,44 +258,6 @@ def progress_ui():
         time.sleep(POLL_INTERVAL)
 
 
-def chat_ui():
-    st.subheader("Chat with the analysis")
-    if not st.session_state.get("job_id"):
-        st.info("Start an analysis first, or provide a job_id to chat against.")
-        return
-
-    job_id = st.session_state["job_id"]
-
-    # Show chat history
-    for msg in st.session_state["chat_history"]:
-        if msg["from"] == "user":
-            st.markdown(f"**You:** {msg['text']}")
-        else:
-            st.markdown(f"**Assistant:** {msg['text']}")
-
-    # Input box
-    prompt = st.text_input("Ask a question about the repository or analysis", key="prompt_input")
-    if st.button("Send") and prompt:
-        st.session_state["chat_history"].append({"from": "user", "text": prompt})
-
-        # Try to call backend ask endpoint (job-scoped)
-        try:
-            resp = requests.post(f"{BACKEND_URL}/ask/{job_id}", json={"prompt": prompt}, timeout=30)
-            if resp.status_code == 200:
-                ans = resp.json().get("answer")
-                st.session_state["chat_history"].append({"from": "assistant", "text": ans})
-            else:
-                st.session_state["chat_history"].append({"from": "assistant", "text": f"Backend did not accept prompt: {resp.status_code}."})
-        except requests.exceptions.ConnectionError:
-            st.session_state["chat_history"].append({"from": "assistant", "text": "Could not reach backend ask endpoint. Ensure server is running and provides /ask/{job_id} or use exported artifacts."})
-        except Exception as e:
-            st.session_state["chat_history"].append({"from": "assistant", "text": f"Error sending prompt: {e}"})
-
-        # clear the input
-        st.session_state["prompt_input"] = ""
-        st.experimental_rerun()
-
-
 # ---------------------------
 # App layout
 # ---------------------------
@@ -345,14 +266,9 @@ def main():
     st.set_page_config(page_title="Research Assistant — Client", layout="wide")
     ensure_session_state()
 
-    st.title("Research Assistant — Client")
-    auth_ui()
+    st.title("Research Assistant — Repository Analysis")
 
-    if not st.session_state["current_user"]:
-        st.info("Please sign in or sign up from the left sidebar to continue.")
-        return
-
-    # Main columns: left for actions, right for progress/chat
+    # Main columns: left for actions, right for progress
     left, right = st.columns([2, 3])
 
     with left:
@@ -360,9 +276,6 @@ def main():
 
     with right:
         progress_ui()
-        st.markdown("---")
-        chat_ui()
-
 
 if __name__ == "__main__":
     main()
