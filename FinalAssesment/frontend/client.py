@@ -93,6 +93,22 @@ def run_local_analysis(state):
             time.sleep(0.5)
             state = func(state)
             state["feed"].append({"type": "milestone", "message": f"{label} complete ✅"})
+
+            # --- NEW: Show preprocessing results ---
+            if label == "Preprocessing":
+                files = state.get("file_list", [])
+                detailed = state.get("detailed_file_info", [])
+                if files:
+                    st.write("### 🧩 Extracted Files")
+                    for f in files[:20]:
+                        st.write(f"- `{f}`")
+                if detailed:
+                    st.write("### 🧠 File Insights")
+                    for d in detailed[:10]:
+                        st.markdown(f"**{os.path.basename(d['file_path'])}** — {d['language']}")
+                        if "structure" in d:
+                            st.json(d["structure"])
+
         except Exception as e:
             state["feed"].append({"type": "error", "message": f"{label} failed: {e}"})
             st.error(f"{label} failed: {e}")
@@ -141,7 +157,6 @@ def upload_and_start_ui():
                 st.error("Please upload a ZIP file.")
                 return
 
-            # Save zip temporarily
             with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
                 tmp.write(zip_file.getvalue())
                 tmp.flush()
@@ -240,39 +255,3 @@ def query_ui():
         return
 
     query = st.text_input("Enter your question:")
-    if st.button("Ask"):
-        results = st.session_state["analysis_results"]
-        context = (
-            f"Repo overview:\n{results.get('analysis_overview', '')}\n"
-            f"Code insights:\n{results.get('code_analysis_results', '')}\n"
-            f"Security issues:\n{results.get('security_findings', '')}\n"
-            f"Web aug info:\n{results.get('web_aug_results', '')}\n"
-        )
-        prompt = context + f"\n\nUser asks: {query}\nProvide a clear, helpful answer."
-        with st.spinner("Thinking..."):
-            answer = query_llm(prompt)
-        st.write(answer)
-
-
-# ---------------------------
-# Main App
-# ---------------------------
-
-def main():
-    st.set_page_config(page_title="Repository Research Assistant", layout="wide")
-    ensure_session_state()
-
-    st.title("🧠 Repository Research Assistant")
-
-    left, right = st.columns([2, 3])
-    with left:
-        upload_and_start_ui()
-    with right:
-        progress_ui()
-
-    st.divider()
-    query_ui()
-
-
-if __name__ == "__main__":
-    main()
