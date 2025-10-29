@@ -10,6 +10,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from agents.documentation_agent import documentation_agent
 import io
+from state_manager import save_state, load_state
 
 
 # Import local agents
@@ -75,63 +76,60 @@ def query_llm(prompt: str) -> str:
 # Local Analysis Pipeline
 # ---------------------------
 
-def run_local_analysis(state):
-    """Run the 4 agents locally and simulate live progress updates."""
-    st.subheader("🔍 Real-Time Local Analysis Progress")
-
-    steps = [
-        ("Preprocessing", preprocessing_agent),
-        ("Analysis Agent", analysis_agent),
-        ("Code Agent", code_agent),
-        ("Security Agent", security_agent),
-        ("Web Augmentation Agent", web_augmentation_agent),
-    ]
+def run_analysis(project_id, state):
+    """Main loop for analysis with pause/resume support."""
+    agents = state.get("agents", [
+        "preprocessing", "analysis_agent", "code_agent", "security_agent", "web_augmentation_agent"
+    ])
+    idx = state.get("current_agent_index", 0)
+    state.setdefault("agent_log", [])
 
     progress = st.progress(0)
-    feed_box = st.empty()
-    total_steps = len(steps)
+    total_steps = len(agents)
 
-    state["feed"] = []
-    for i, (label, func) in enumerate(steps, 1):
-        try:
-            feed_box.info(f"🚀 Running {label} ...")
-            time.sleep(0.5)
-            state = func(state)
-            state["feed"].append({"type": "milestone", "message": f"{label} complete ✅"})
-
-            # --- NEW: Show preprocessing results ---
-            if label == "Preprocessing":
-                files = state.get("file_list", [])
-                detailed = state.get("detailed_file_info", [])
-                if files:
-                    st.write("### 🧩 Extracted Files")
-                    for f in files[:20]:
-                        st.write(f"- `{f}`")
-                if detailed:
-                    st.write("### 🧠 File Insights")
-                    for d in detailed[:10]:
-                        st.markdown(f"**{os.path.basename(d['file_path'])}** — {d['language']}")
-                        if "structure" in d:
-                            st.json(d["structure"])
-
-        except Exception as e:
-            state["feed"].append({"type": "error", "message": f"{label} failed: {e}"})
-            st.error(f"{label} failed: {e}")
+    while idx < len(agents):
+        if state.get("is_paused"):
+            st.warning(f"⏸️ Analysis paused at step: {agents[idx]}")
+            save_state(project_id, state)
             break
 
-        progress.progress(i / total_steps)
-        with feed_box.container():
-            st.write("### Activity Feed")
-            for f in state["feed"][-10:]:
-                if f["type"] == "error":
-                    st.error(f["message"])
-                elif f["type"] == "milestone":
-                    st.success(f["message"])
-                else:
-                    st.info(f["message"])
-        time.sleep(1)
+        agent = agents[idx]
+        state["agent_log"].append(f"🚀 Running {agent} agent...")
 
-    st.success("🎉 All agents finished successfully!")
+        try:
+            if agent == "preprocessing":
+                state = preprocessing_agent(state)
+            elif agent == "analysis_agent":
+                state = analysis_agent(state)
+            elif agent == "code_agent":
+                state = code_agent(state)
+            elif agent == "security_agent":
+                state = security_agent(state)
+            elif agent == "web_augmentation_agent":
+                state = web_augmentation_agent(state)
+            elif agent == "documentation_agent":
+                state = documentation_agent(state)
+
+            # Save after each agent
+            state["current_agent_index"] = idx + 1
+            save_state(project_id, state)
+            progress.progress((idx + 1) / total_steps)
+            st.success(f"{agent} complete ✅")
+
+        except Exception as e:
+            err = f"❌ Error in {agent}: {e}"
+            st.error(err)
+            state["agent_log"].append(err)
+            save_state(project_id, state)
+            break
+
+        idx += 1
+
+    if idx >= len(agents):
+        st.success("🎉 All agents finished successfully!")
+        state["is_completed"] = True
+        save_state(project_id, state)
+
     return state
 
 
@@ -332,6 +330,55 @@ def query_ui():
                 file_name=f"{role_key}_Documentation.pdf",
                 mime="application/pdf"
             )
+def summarize_progress_ui(state):
+    """Use LLM to summarize current progress from logs."""
+    logs = "\n".join(state.get("agent_log", []))
+    if not logs:
+        st.info("No logs yet.")
+        return
+
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    prompt = f"Summarize the current analysis progress based on these logs:\n\n{logs}"
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a repository progress summarizer."},
+            {"role": "user", "content": prompt},
+        ]
+    )
+    st.markdown("### 🧾 Current Summary")
+    st.write(response.choices[0].message.content)
+
+
+def progress_ui():
+    st.header("📊 Analysis Control Panel")
+    project_id = st.session_state.get("project_id", 1)
+    state = load_state(project_id)
+    st.session_state["analysis_state"] = state
+
+    col1, col2, col3 = st.columns([1, 1, 2])
+
+    with col1:
+        if st.button("⏸️ Pause"):
+            state["is_paused"] = True
+            save_state(project_id, state)
+            st.success("Analysis paused!")
+
+    with col2:
+        if st.button("▶️ Resume"):
+            state["is_paused"] = False
+            save_state(project_id, state)
+            st.info("Resuming from last saved point...")
+            run_analysis(project_id, state)
+
+    with col3:
+        if st.button("🧠 Summarize Current State"):
+            summarize_progress_ui(state)
+
+    # Log display
+    st.subheader("🪵 Logs")
+    for log in reversed(state.get("agent_log", [])):
+        st.markdown(f"- {log}")
 
 # ---------------------------
 # Main Streamlit App Layout
