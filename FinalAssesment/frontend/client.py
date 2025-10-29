@@ -19,6 +19,7 @@ from agents.code_agent import code_agent
 from agents.security_agent import security_agent
 from agents.web_augmentation_agent import web_augmentation_agent
 from agents.preprocessing_agent import preprocessing_agent
+from state_manager import load_state,save_state
 
 # ---------------------------
 # Setup
@@ -202,6 +203,26 @@ def upload_and_start_ui():
 # ---------------------------
 # Progress UI (Backend Polling)
 # ---------------------------
+def run_local_analysis(project_id):
+    """Initializes state and starts/resumes analysis."""
+    # Load existing state (if paused)
+    state = load_state(project_id)
+
+    # Initialize state if starting fresh
+    if not state:
+        state = {
+            "project_id": project_id,
+            "agents": ["preprocessing", "repo_intelligence", "doc_agent", "analysis_agent"],
+            "current_agent_index": 0,
+            "is_paused": False,
+            "agent_log": [],
+            "config": {"OPENAI_API_KEY": os.getenv("OPENAI_API_KEY")}
+        }
+
+    # Start / Resume analysis
+    st.session_state.analysis_state = run_analysis(project_id, state)
+    save_state(project_id, st.session_state.analysis_state)
+    return st.session_state.analysis_state
 
 def progress_ui():
     job_id = st.session_state.get("job_id")
