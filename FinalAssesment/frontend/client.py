@@ -11,6 +11,7 @@ from reportlab.pdfgen import canvas
 from agents.documentation_agent import documentation_agent
 import io
 from state_manager import save_state, load_state
+from llm_streamer import stream_llm
 
 
 # Import local agents
@@ -78,30 +79,77 @@ def query_llm(prompt: str) -> str:
 # ---------------------------
 
 
-def run_local_analysis(state):
-    """Wrapper to initialize or resume analysis."""
-    project_id = 1  # ✅ use fixed or unique numeric ID (not the full state dict)
+def run_analysis(project_id, state):
+    agents = state.get("agents", [])
+    idx = state.get("current_agent_index", 0)
 
-    saved_state = load_state(project_id)
+    while idx < len(agents):
+        if state.get("is_paused"):
+            print(f"⏸️ Paused at agent {agents[idx]}")
+            save_state(project_id, state)
+            break
 
-    if saved_state:
-        st.info("Resuming from saved state...")
-        state = saved_state
-    else:
-        st.info("Starting new analysis...")
-        state.setdefault("agents", [
-            "preprocessing", "analysis_agent", "code_agent",
-            "security_agent", "web_augmentation_agent", "documentation_agent"
-        ])
-        state.setdefault("current_agent_index", 0)
-        state.setdefault("is_paused", False)
-        state.setdefault("agent_log", [])
-        state.setdefault("config", {"OPENAI_API_KEY": os.getenv("OPENAI_API_KEY")})
-        save_state(project_id, state)
+        agent = agents[idx]
+        state["agent_log"].append(f"Running {agent}...")
 
-    # ✅ Run main loop
-    return run_analysis(project_id, state)
+        try:
+            if agent == "preprocessing":
+                state = preprocessing_agent(state)
 
+            elif agent == "repo_intelligence":
+                state = repo_intelligence_agent(state)
+
+            elif agent == "doc_agent":
+                prompt = "Generate product and SDE documentation for this repo..."
+                stream_llm(project_id, prompt, state, role="doc_agent")
+
+            elif agent == "analysis_agent":
+                prompt = "Analyze code quality and give insights..."
+                stream_llm(project_id, prompt, state, role="analysis_agent")
+
+            state["current_agent_index"] = idx + 1
+            save_state(project_id, state)
+
+        except Exception as e:
+            state["agent_log"].append(f"❌ Error in {agent}: {e}")
+            save_state(project_id, state)
+            break
+
+        idx += 1
+
+    return state
+
+def control_panel_ui(project_id: int):
+    """Streamlit UI panel to manually pause/resume the LLM prompt pipeline."""
+    st.subheader("⏯️ Prompt Control Panel")
+
+    state = load_state(project_id)
+    if not state:
+        st.info("No active state found. Start an analysis first.")
+        return
+
+    col1, col2, col3 = st.columns([1, 1, 2])
+
+    with col1:
+        if st.button("⏸️ Pause Prompt"):
+            state["is_paused"] = True
+            save_state(project_id, state)
+            st.warning("Prompt paused successfully!")
+
+    with col2:
+        if st.button("▶️ Resume Prompt"):
+            state["is_paused"] = False
+            save_state(project_id, state)
+            st.info("Resuming prompt stream...")
+            run_analysis(project_id, state)
+
+    with col3:
+        st.metric("Current Agent", state.get("agents", [])[state.get("current_agent_index", 0)] if state.get("agents") else "N/A")
+
+    # Optional live logs
+    st.markdown("### 🪵 Agent Logs")
+    for log in reversed(state.get("agent_log", [])):
+        st.markdown(f"- {log}")
 
 
 # ---------------------------
