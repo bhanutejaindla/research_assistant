@@ -6,6 +6,7 @@ import tempfile
 import os
 from typing import Optional
 from agents.preprocessing_agent import preprocessing_agent
+from some_llm_library import query_llm  # Replace with actual LLM library import
 
 # Simple Streamlit client for the Research Assistant backend.
 # Features:
@@ -296,16 +297,12 @@ def progress_ui():
 
 
 def upload_and_preprocess_ui():
-    st.header("Upload and Preprocess Repository")
+    st.header("Upload Repository for Analysis")
 
     # File upload section
     zip_file = st.file_uploader("Upload a ZIP file", type=["zip"], help="Upload a ZIP file containing the repository.")
 
-    if st.button("Preprocess Files"):
-        if zip_file is None:
-            st.error("Please upload a ZIP file to preprocess.")
-            return
-
+    if zip_file:
         # Save the uploaded file to a temporary location
         with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_file:
             temp_file.write(zip_file.getvalue())
@@ -318,14 +315,21 @@ def upload_and_preprocess_ui():
         try:
             state = preprocessing_agent(state)
 
+            # Filter important files (e.g., entry points, configuration files)
+            important_files = [
+                file for file in state.get("file_list", [])
+                if file.endswith((".py", ".yaml", ".json", "Dockerfile", "Makefile"))
+            ]
+
+            # Update session state
+            st.session_state["important_files"] = important_files
+            st.session_state["detailed_file_info"] = state.get("detailed_file_info", [])
+
             # Display preprocessing results
-            st.write("### Preprocessing Results")
-            st.write(f"**Extracted Files:**")
-            for file in state.get("file_list", []):
+            st.write("### Important Files")
+            for file in important_files:
                 st.write(f"- {file}")
 
-            st.session_state["preprocessed_files"] = state.get("file_list", [])
-            st.session_state["detailed_file_info"] = state.get("detailed_file_info", [])
             st.success("Preprocessing completed successfully.")
         except Exception as e:
             st.error(f"Error during preprocessing: {e}")
@@ -334,13 +338,13 @@ def upload_and_preprocess_ui():
 def query_ui():
     st.header("Query the Repository")
 
-    if "preprocessed_files" not in st.session_state or not st.session_state["preprocessed_files"]:
-        st.info("Please preprocess a repository first.")
+    if "important_files" not in st.session_state or not st.session_state["important_files"]:
+        st.info("Please upload a repository to preprocess first.")
         return
 
-    # Display preprocessed files
-    st.write("### Preprocessed Files")
-    for file in st.session_state["preprocessed_files"]:
+    # Display important files
+    st.write("### Important Files")
+    for file in st.session_state["important_files"]:
         st.write(f"- {file}")
 
     # Query input
@@ -351,19 +355,13 @@ def query_ui():
             st.error("Please enter a query.")
             return
 
-        # Call the backend API to handle the query
+        # Pass the query to the LLM
         try:
-            response = requests.post(f"{BACKEND_URL}/query", json={"query": query}, timeout=15)
-
-            if response.status_code == 200:
-                result = response.json()
-                st.write("### Query Results")
-                st.write(result.get("answer", "No answer provided."))
-            else:
-                st.error(f"Query failed: {response.status_code} {response.text}")
-
+            llm_response = query_llm(query)
+            st.write("### Query Results")
+            st.write(llm_response)
         except Exception as e:
-            st.error(f"Error during query: {e}")
+            st.error(f"Error querying the LLM: {e}")
 
 
 # ---------------------------
