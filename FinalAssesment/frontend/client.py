@@ -77,61 +77,31 @@ def query_llm(prompt: str) -> str:
 # Local Analysis Pipeline
 # ---------------------------
 
-def run_analysis(project_id, state):
-    """Main loop for analysis with pause/resume support."""
-    agents = state.get("agents", [
-        "preprocessing", "analysis_agent", "code_agent", "security_agent", "web_augmentation_agent"
-    ])
-    idx = state.get("current_agent_index", 0)
-    state.setdefault("agent_log", [])
 
-    progress = st.progress(0)
-    total_steps = len(agents)
+def run_local_analysis(state):
+    """Wrapper to initialize or resume analysis."""
+    project_id = 1  # ✅ use fixed or unique numeric ID (not the full state dict)
 
-    while idx < len(agents):
-        if state.get("is_paused"):
-            st.warning(f"⏸️ Analysis paused at step: {agents[idx]}")
-            save_state(project_id, state)
-            break
+    saved_state = load_state(project_id)
 
-        agent = agents[idx]
-        state["agent_log"].append(f"🚀 Running {agent} agent...")
-
-        try:
-            if agent == "preprocessing":
-                state = preprocessing_agent(state)
-            elif agent == "analysis_agent":
-                state = analysis_agent(state)
-            elif agent == "code_agent":
-                state = code_agent(state)
-            elif agent == "security_agent":
-                state = security_agent(state)
-            elif agent == "web_augmentation_agent":
-                state = web_augmentation_agent(state)
-            elif agent == "documentation_agent":
-                state = documentation_agent(state)
-
-            # Save after each agent
-            state["current_agent_index"] = idx + 1
-            save_state(project_id, state)
-            progress.progress((idx + 1) / total_steps)
-            st.success(f"{agent} complete ✅")
-
-        except Exception as e:
-            err = f"❌ Error in {agent}: {e}"
-            st.error(err)
-            state["agent_log"].append(err)
-            save_state(project_id, state)
-            break
-
-        idx += 1
-
-    if idx >= len(agents):
-        st.success("🎉 All agents finished successfully!")
-        state["is_completed"] = True
+    if saved_state:
+        st.info("Resuming from saved state...")
+        state = saved_state
+    else:
+        st.info("Starting new analysis...")
+        state.setdefault("agents", [
+            "preprocessing", "analysis_agent", "code_agent",
+            "security_agent", "web_augmentation_agent", "documentation_agent"
+        ])
+        state.setdefault("current_agent_index", 0)
+        state.setdefault("is_paused", False)
+        state.setdefault("agent_log", [])
+        state.setdefault("config", {"OPENAI_API_KEY": os.getenv("OPENAI_API_KEY")})
         save_state(project_id, state)
 
-    return state
+    # ✅ Run main loop
+    return run_analysis(project_id, state)
+
 
 
 # ---------------------------
