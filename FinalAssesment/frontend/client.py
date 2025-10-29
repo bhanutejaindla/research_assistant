@@ -36,16 +36,16 @@ def ensure_session_state():
         st.session_state["chat_history"] = []
 
 
-def signup(username: str, password: str, role: str) -> Optional[str]:
+def signup(email: str, password: str, role: str) -> Optional[str]:
     # Attempt backend registration; fall back to local in-memory if backend is unavailable
-    payload = {"username": username, "password": password, "role": role}
+    payload = {"email": email, "password": password, "role": role}
     try:
         resp = requests.post(f"{BACKEND_URL}/auth/register", json=payload, timeout=8)
         if resp.status_code in (200, 201):
             body = resp.json()
             # Expect backend to return user info {"username":..., "role":...}
             user = body.get("user") or body
-            st.session_state["current_user"] = {"username": user.get("username", username), "role": user.get("role", role)}
+            st.session_state["current_user"] = {"email": user.get("email", email), "role": user.get("role", role)}
             # Optionally persist token/session if backend provides one
             if "token" in body:
                 st.session_state["auth_token"] = body["token"]
@@ -55,21 +55,21 @@ def signup(username: str, password: str, role: str) -> Optional[str]:
     except requests.exceptions.RequestException:
         # Fallback to in-memory simple signup for local demo
         users = st.session_state["users"]
-        if username in users:
-            return "Username already exists (local)"
-        users[username] = {"password": password, "role": role}
-        st.session_state["current_user"] = {"username": username, "role": role}
+        if email in users:
+            return "Email already exists (local)"
+        users[email] = {"password": password, "role": role}
+        st.session_state["current_user"] = {"email": email, "role": role}
         return None
 
 
-def signin(username: str, password: str) -> Optional[str]:
-    payload = {"username": username, "password": password}
+def signin(email: str, password: str) -> Optional[str]:
+    payload = {"email": email, "password": password}
     try:
         resp = requests.post(f"{BACKEND_URL}/auth/login", json=payload, timeout=8)
         if resp.status_code == 200:
             body = resp.json()
             user = body.get("user") or body
-            st.session_state["current_user"] = {"username": user.get("username", username), "role": user.get("role", "User")}
+            st.session_state["current_user"] = {"email": user.get("email", email), "role": user.get("role", "User")}
             if "token" in body:
                 st.session_state["auth_token"] = body["token"]
             return None
@@ -78,10 +78,10 @@ def signin(username: str, password: str) -> Optional[str]:
     except requests.exceptions.RequestException:
         # Fallback to local in-memory signin for demo
         users = st.session_state["users"]
-        user = users.get(username)
+        user = users.get(email)
         if not user or user.get("password") != password:
-            return "Invalid username or password (local)"
-        st.session_state["current_user"] = {"username": username, "role": user.get("role")}
+            return "Invalid email or password (local)"
+        st.session_state["current_user"] = {"email": email, "role": user.get("role")}
         return None
 
 
@@ -99,22 +99,23 @@ def signout():
 def auth_ui():
     st.sidebar.header("Account")
     if st.session_state["current_user"]:
-        st.sidebar.write(f"Signed in as **{st.session_state['current_user']['username']}** ({st.session_state['current_user']['role']})")
+        st.sidebar.write(f"Signed in as **{st.session_state['current_user']['email']}** ({st.session_state['current_user']['role']})")
         if st.sidebar.button("Sign out"):
             signout()
             st.experimental_rerun()
         return
 
-    tab = st.sidebar.radio("Auth", ["Sign in", "Sign up"]) 
+    tab = st.sidebar.radio("Auth", ["Sign in", "Sign up"])
 
     if tab == "Sign up":
         with st.sidebar.form("signup_form"):
-            su_user = st.text_input("Username")
-            su_pass = st.text_input("Password", type="password")
-            su_role = st.selectbox("Role", ["User", "Admin"])
-            submitted = st.form_submit_button("Create account")
+            st.markdown("### Create an Account")
+            su_email = st.text_input("Email", placeholder="Enter your email")
+            su_pass = st.text_input("Password", type="password", placeholder="Enter your password")
+            su_role = st.selectbox("Role", ["User", "Admin"], help="Select your role")
+            submitted = st.form_submit_button("Create Account", type="primary")
             if submitted:
-                err = signup(su_user.strip(), su_pass, su_role)
+                err = signup(su_email.strip(), su_pass, su_role)
                 if err:
                     st.sidebar.error(err)
                 else:
@@ -123,11 +124,12 @@ def auth_ui():
 
     else:
         with st.sidebar.form("signin_form"):
-            si_user = st.text_input("Username")
-            si_pass = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Sign in")
+            st.markdown("### Sign In")
+            si_email = st.text_input("Email", placeholder="Enter your email")
+            si_pass = st.text_input("Password", type="password", placeholder="Enter your password")
+            submitted = st.form_submit_button("Sign In", type="primary")
             if submitted:
-                err = signin(si_user.strip(), si_pass)
+                err = signin(si_email.strip(), si_pass)
                 if err:
                     st.sidebar.error(err)
                 else:
