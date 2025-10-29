@@ -6,7 +6,10 @@ import tempfile
 import os
 from typing import Optional
 from agents.preprocessing_agent import preprocessing_agent
-from some_llm_library import query_llm  # Replace with actual LLM library import
+import openai
+
+# Set your OpenAI API key
+openai.api_key = "sk-4zZtqKJtqKJtqKJtqKJtqKJtqKJtqKJtqKJtqKJ"  # Replace with your actual OpenAI API key
 
 # Simple Streamlit client for the Research Assistant backend.
 # Features:
@@ -93,6 +96,23 @@ def signout():
     st.session_state["job_id"] = None
     st.session_state["feed"] = []
     st.session_state["chat_history"] = []
+
+
+def query_llm(prompt):
+    """Query the OpenAI GPT-4.0 model with a refined prompt."""
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4.0",  # Use the GPT-4.0 model
+            messages=[
+                {"role": "system", "content": "You are an expert in software repositories."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=300,
+            temperature=0.7
+        )
+        return response['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        return f"Error querying LLM: {e}"
 
 
 # ---------------------------
@@ -326,11 +346,11 @@ def upload_and_preprocess_ui():
             st.session_state["detailed_file_info"] = state.get("detailed_file_info", [])
 
             # Display preprocessing results
-            st.write("### Important Files")
+            st.write("### Preprocessed Files")
             for file in important_files:
                 st.write(f"- {file}")
 
-            st.success("Preprocessing completed successfully.")
+            st.success("Preprocessing completed successfully. You can now query the repository.")
         except Exception as e:
             st.error(f"Error during preprocessing: {e}")
 
@@ -343,7 +363,7 @@ def query_ui():
         return
 
     # Display important files
-    st.write("### Important Files")
+    st.write("### Preprocessed Files")
     for file in st.session_state["important_files"]:
         st.write(f"- {file}")
 
@@ -355,9 +375,16 @@ def query_ui():
             st.error("Please enter a query.")
             return
 
-        # Pass the query to the LLM
+        # Refine the query prompt for the LLM
+        refined_prompt = (
+            "Based on the following preprocessed files, answer the user's query in detail.\n\n"
+            f"Preprocessed Files: {', '.join(st.session_state['important_files'])}\n\n"
+            f"User Query: {query}"
+        )
+
+        # Pass the refined prompt to the LLM
         try:
-            llm_response = query_llm(query)
+            llm_response = query_llm(refined_prompt)
             st.write("### Query Results")
             st.write(llm_response)
         except Exception as e:
