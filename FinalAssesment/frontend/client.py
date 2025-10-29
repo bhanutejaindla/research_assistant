@@ -9,7 +9,7 @@ from agents.preprocessing_agent import preprocessing_agent
 import openai
 
 # Set your OpenAI API key
-openai.api_key = "sk-4zZtqKJtqKJtqKJtqKJtqKJtqKJtqKJtqKJ"  # Replace with your actual OpenAI API key
+openai.api_key = "sk-4zZtqKJtqKJtqKJtqKJtqKJtqKJtqKJ"  # Replace with your actual OpenAI API key
 
 # Simple Streamlit client for the Research Assistant backend.
 # Features:
@@ -361,11 +361,6 @@ def query_ui():
     if "important_files" not in st.session_state or not st.session_state["important_files"]:
         st.info("Please upload a repository to preprocess first.")
         return
-
-    # Display important files
-    st.write("### Preprocessed Files")
-    for file in st.session_state["important_files"]:
-        st.write(f"- {file}")
 
     # Query input
     query = st.text_input("Enter your query about the repository:", help="Ask questions about the repository structure, files, or content.")
