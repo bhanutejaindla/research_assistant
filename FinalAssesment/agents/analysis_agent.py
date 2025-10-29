@@ -1,13 +1,21 @@
+# agents/analysis_agent.py
+import os
+
 def analysis_agent(state: dict) -> dict:
-    """Performs analysis on the provided file list and updates the state."""
+    """Performs repository-level analysis and file discovery."""
 
-    file_list = state.get("file_list", [])
+    file_list = []
+    repo_path = (
+        state.get("unzipped_path")
+        or state.get("repo_path")
+        or "uploads"
+    )
 
-    # Log number of files to process
-    state.setdefault("agent_log", [])
-    state["agent_log"].append(f"Analysis Agent: {len(file_list)} files to process.")
+    for root, _, files in os.walk(repo_path):
+        for f in files:
+            if not f.startswith(".") and not any(x in root for x in [".git", "node_modules"]):
+                file_list.append(os.path.join(root, f))
 
-    # Add overview summary to state
-    state["analysis_overview"] = f"{len(file_list)} files queued."
-
+    state["file_list"] = file_list
+    state["agent_log"].append(f"Analysis Agent: Found {len(file_list)} files.")
     return state

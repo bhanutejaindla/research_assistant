@@ -1,58 +1,73 @@
 import os
-from dotenv import load_dotenv
+import time
 from openai import OpenAI
+from dotenv import load_dotenv
+import streamlit as st
 
 load_dotenv()
 
 
 def security_agent(state: dict) -> dict:
     """
-    Reviews Python files for potential security vulnerabilities using OpenAI.
-    Expects 'OPENAI_API_KEY' in state["config"] or environment variables.
+    Scans Python code files for common security risks
+    and updates progress live in Streamlit.
     """
 
     state.setdefault("agent_log", [])
-
-    # Check if security review is enabled
-    if not state.get("config", {}).get("enable_security", True):
-        state["agent_log"].append("Security Agent: Skipped, setting disabled.")
-        return state
-
-    # Retrieve API key from config or environment
     api_key = state.get("config", {}).get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
     if not api_key:
-        state["agent_log"].append("Security Agent: Missing API key in config or environment.")
+        st.warning("⚠️ Missing API key for security agent.")
         return state
 
     client = OpenAI(api_key=api_key)
 
+    file_list = [f for f in state.get("file_list", []) if f.endswith(".py")]
+    total_files = len(file_list)
+
+    if total_files == 0:
+        st.info("No Python files found for security review.")
+        return state
+
+    st.info(f"🛡️ Running security review on {total_files} files...")
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
     results = []
 
-    for fpath in state.get("file_list", []):
-        if fpath.endswith(".py"):
-            try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    code = f.read()
+    for i, fpath in enumerate(file_list, 1):
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                code = f.read()
 
-                prompt = (
-                    "Review the following Python code for common vulnerabilities, "
-                    "OWASP Top 10 risks, and poor security practices. "
-                    "List any issues found and provide a short explanation for each.\n\n"
-                    f"Code:\n{code[:3800]}"  # Limit to prevent token overflow
-                )
+            progress = int((i / total_files) * 100)
+            status_text.info(f"🔒 Checking {os.path.basename(fpath)} ({progress}%)")
+            progress_bar.progress(progress / 100)
 
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": prompt}],
-                )
+            prompt = (
+                "Identify any security vulnerabilities or unsafe patterns "
+                "in the following Python code. Include explanations and suggestions:\n\n"
+                f"{code[:3500]}"
+            )
 
-                sec_result = response.choices[0].message["content"]
-                results.append({"file": fpath, "security_review": sec_result})
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+            )
 
-                state["agent_log"].append(f"Security Agent: LLM scanned {fpath}.")
-            except Exception as e:
-                state["agent_log"].append(f"Security Agent: Error with {fpath}: {str(e)}")
+            result = response.choices[0].message.content
+            results.append({"file": fpath, "security_review": result})
+            state["agent_log"].append(f"Security Agent: ✅ Scanned {fpath}")
 
+        except Exception as e:
+            msg = f"❌ Security Agent: Error scanning {fpath}: {str(e)}"
+            st.warning(msg)
+            state["agent_log"].append(msg)
+
+        time.sleep(0.1)
+
+    status_text.success("✅ Security analysis complete.")
+    progress_bar.progress(1.0)
     state["security_findings"] = results
     return state
