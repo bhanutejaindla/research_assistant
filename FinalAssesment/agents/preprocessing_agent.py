@@ -1,6 +1,9 @@
 import os
 import zipfile
 import requests
+from pygments.lexers import guess_lexer_for_filename
+from pygments.util import ClassNotFound
+import ast
 
 
 def extract_zip(zip_path, extract_to="uploads"):
@@ -56,17 +59,45 @@ def download_and_extract_github(github_url, extract_to="github_unzipped"):
     local_zip = os.path.join(extract_to, "repo.zip")
 
     try:
-        r = requests.get(zip_url)
-        if r.status_code != 200:
-            print(f"Failed to download ZIP from {zip_url}: HTTP {r.status_code}")
-            return []
+        r = requests.get(zip_url, timeout=15)
+        r.raise_for_status()
         with open(local_zip, "wb") as f:
             f.write(r.content)
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         print(f"Download exception: {e}")
         return []
 
     return extract_zip(local_zip, extract_to)
+
+
+def detect_file_language(file_path):
+    """Detects the programming language of a file."""
+    try:
+        with open(file_path, "r") as f:
+            content = f.read()
+        lexer = guess_lexer_for_filename(file_path, content)
+        return lexer.name
+    except (FileNotFoundError, ClassNotFound):
+        return "Unknown"
+
+
+def extract_python_structure(file_path):
+    """Extracts classes, functions, and imports from a Python file."""
+    try:
+        with open(file_path, "r") as f:
+            tree = ast.parse(f.read(), filename=file_path)
+        structure = {"classes": [], "functions": [], "imports": []}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                structure["classes"].append(node.name)
+            elif isinstance(node, ast.FunctionDef):
+                structure["functions"].append(node.name)
+            elif isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    structure["imports"].append(alias.name)
+        return structure
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def preprocessing_agent(state):
@@ -74,18 +105,30 @@ def preprocessing_agent(state):
     state.setdefault("agent_log", [])
     files = []
 
-    if state.get("zip_path"):
-        files = extract_zip(state["zip_path"])
-        state["agent_log"].append(f"Preprocessing Agent: Extracted {len(files)} files from ZIP.")
-    elif state.get("github_url"):
-        files = download_and_extract_github(state["github_url"])
-        state["agent_log"].append(f"Preprocessing Agent: Downloaded and extracted {len(files)} files from GitHub.")
-    else:
-        state["agent_log"].append("Preprocessing Agent: No input file or GitHub URL provided.")
+    try:
+        if state.get("zip_path"):
+            files = extract_zip(state["zip_path"])
+            state["agent_log"].append(f"Preprocessing Agent: Extracted {len(files)} files from ZIP.")
+        elif state.get("github_url"):
+            files = download_and_extract_github(state["github_url"])
+            state["agent_log"].append(f"Preprocessing Agent: Downloaded and extracted {len(files)} files from GitHub.")
+        else:
+            state["agent_log"].append("Preprocessing Agent: No input file or GitHub URL provided.")
 
-    state["file_list"] = files
+        state["file_list"] = files
 
-    if len(files) > 0:
-        print(f"First 5 extracted files: {files[:5]}")
+        # Additional processing for each file
+        detailed_info = []
+        for file in files:
+            file_info = {"file_path": file, "language": detect_file_language(file)}
+            if file.endswith(".py"):
+                file_info["structure"] = extract_python_structure(file)
+            detailed_info.append(file_info)
+
+        state["detailed_file_info"] = detailed_info
+        state["agent_log"].append(f"Preprocessing Agent: Processed {len(detailed_info)} files with detailed analysis.")
+
+    except Exception as e:
+        state["agent_log"].append(f"Preprocessing Agent: Error during preprocessing - {e}")
 
     return state

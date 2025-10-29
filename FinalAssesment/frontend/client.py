@@ -123,10 +123,6 @@ def upload_and_start_ui():
         st.write("\n")
         st.write("\n")
         if st.button("Start Analysis"):
-            if not st.session_state["current_user"]:
-                st.warning("Please sign in to start an analysis.")
-                return
-
             if source == "GitHub URL" and (not github_url or github_url.strip() == ""):
                 st.error("Please provide a GitHub URL.")
                 return
@@ -134,6 +130,40 @@ def upload_and_start_ui():
             if source == "ZIP upload" and zip_file is None:
                 st.error("Please upload a ZIP file.")
                 return
+
+            # Preprocessing step
+            try:
+                if zip_file:
+                    tf = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+                    tf.write(zip_file.getvalue())
+                    tf.flush()
+                    tf.close()
+                    zip_path = tf.name
+
+                    # Call preprocessing agent
+                    from agents.preprocessing_agent import preprocess_repository
+
+                    repo_details = preprocess_repository(zip_path=zip_path)
+                    st.session_state["preprocessed_files"] = repo_details.get("files", [])
+                    st.session_state["repository_about"] = repo_details.get("about", "Unknown")
+                    st.session_state["entry_point"] = repo_details.get("entry_point", "Unknown")
+
+                    st.success("Preprocessing completed successfully.")
+
+                    # Display preprocessing results
+                    st.write("### Repository Details")
+                    st.write(f"**About**: {st.session_state['repository_about']}")
+                    st.write(f"**Entry Point**: {st.session_state['entry_point']}")
+
+                    st.write("### Extracted Files")
+                    for file in st.session_state["preprocessed_files"]:
+                        st.write(f"- {file}")
+
+                else:
+                    st.error("Preprocessing requires a ZIP file.")
+
+            except Exception as e:
+                st.error(f"Error during preprocessing: {e}")
 
             # Build form data
             files = {}
@@ -209,7 +239,7 @@ def progress_ui():
     if not job_id:
         return
 
-    st.subheader("Analysis progress")
+    st.subheader("Analysis Progress")
     placeholder = st.empty()
     progress_bar = st.progress(0)
 
@@ -235,8 +265,8 @@ def progress_ui():
                 if current_file:
                     st.write(f"**Current file**: {current_file}")
 
-                st.write("**Activity feed**")
-                # display only last 20 feed messages
+                st.write("**Activity Feed**")
+                # Display the feed messages
                 for item in feed[-20:]:
                     t = item.get("type", "info")
                     msg = item.get("message", "")
@@ -247,6 +277,12 @@ def progress_ui():
                     else:
                         st.info(msg)
 
+            # Display extracted files if the stage is completed
+            if status.get("stage") == "Completed" and "extracted_files" in status:
+                st.write("### Extracted Files")
+                for file in status["extracted_files"]:
+                    st.write(f"- {file}")
+
             if status.get("stage") in ("Completed", "Error") or int(percent) >= 100:
                 st.success("Analysis finished" if status.get("stage") == "Completed" else "Analysis ended with error")
                 break
@@ -256,6 +292,81 @@ def progress_ui():
             break
 
         time.sleep(POLL_INTERVAL)
+
+
+def upload_and_preprocess_ui():
+    st.header("Upload and Preprocess Repository")
+
+    # File upload section
+    zip_file = st.file_uploader("Upload a ZIP file", type=["zip"], help="Upload a ZIP file containing the repository.")
+
+    if st.button("Preprocess Files"):
+        if zip_file is None:
+            st.error("Please upload a ZIP file to preprocess.")
+            return
+
+        # Save the uploaded file to a temporary location
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_file:
+            temp_file.write(zip_file.getvalue())
+            temp_file_path = temp_file.name
+
+        # Call the preprocessing agent via the backend API
+        try:
+            files = {"zip_file": (zip_file.name, zip_file.getvalue())}
+            response = requests.post(f"{BACKEND_URL}/preprocess", files=files, timeout=15)
+
+            if response.status_code == 200:
+                result = response.json()
+
+                # Display preprocessing results
+                st.write("### Preprocessing Results")
+                st.write(f"**Extracted Files:**")
+                for file in result.get("file_list", []):
+                    st.write(f"- {file}")
+
+                st.session_state["preprocessed_files"] = result.get("file_list", [])
+                st.session_state["detailed_file_info"] = result.get("detailed_file_info", [])
+                st.success("Preprocessing completed successfully.")
+            else:
+                st.error(f"Preprocessing failed: {response.status_code} {response.text}")
+
+        except Exception as e:
+            st.error(f"Error during preprocessing: {e}")
+
+
+def query_ui():
+    st.header("Query the Repository")
+
+    if "preprocessed_files" not in st.session_state or not st.session_state["preprocessed_files"]:
+        st.info("Please preprocess a repository first.")
+        return
+
+    # Display preprocessed files
+    st.write("### Preprocessed Files")
+    for file in st.session_state["preprocessed_files"]:
+        st.write(f"- {file}")
+
+    # Query input
+    query = st.text_input("Enter your query about the repository:", help="Ask questions about the repository structure, files, or content.")
+
+    if st.button("Submit Query"):
+        if not query.strip():
+            st.error("Please enter a query.")
+            return
+
+        # Call the backend API to handle the query
+        try:
+            response = requests.post(f"{BACKEND_URL}/query", json={"query": query}, timeout=15)
+
+            if response.status_code == 200:
+                result = response.json()
+                st.write("### Query Results")
+                st.write(result.get("answer", "No answer provided."))
+            else:
+                st.error(f"Query failed: {response.status_code} {response.text}")
+
+        except Exception as e:
+            st.error(f"Error during query: {e}")
 
 
 # ---------------------------
@@ -276,6 +387,14 @@ def main():
 
     with right:
         progress_ui()
+
+    st.markdown("---")
+
+    with left:
+        upload_and_preprocess_ui()
+
+    with right:
+        query_ui()
 
 if __name__ == "__main__":
     main()
