@@ -1,0 +1,494 @@
+Multi-Agent Code Analysis & Documentation System
+
+Overview
+
+Build a sophisticated multi-agent system that transforms any codebase into comprehensive, role-specific documentation with visual diagrams and real-time analysis. The system employs specialized agents working together to understand code, search for latest best practices, and generate tailored artifacts for Software Engineers and Product Managers with interactive user control
+
+Use Case: Intelligent Codebase Documentation
+
+Your system must handle
+
+Large repository analysis with intelligent preprocessing
+
+Smart identification of important files and metadata extraction
+
+Real-time progress visibility
+
+Multi-agent orchestration where each agent performs one specific task
+
+Web augmented documentation using latest online resources
+
+User controlled analysis flow with pause/resume functionality
+
+Visual flow generation using Mermaid diagrams
+
+Role-based access with User/Admin distinction
+
+Complete observability and traceability of agent operations
+
+Target Personas
+
+Software Engineer (SDE)
+
+Profile Technical team members who need to understand, maintain, and extend the codebase
+
+Key Deliverables They Need
+
+Technical architecture overview with component relationships
+
+API documentation with request/response schemas
+
+Database schema and data flow diagrams
+
+Code structure and module dependencies
+
+Setup and deployment instructions
+
+Error handling patterns and logging strategies
+
+Performance considerations and optimization opportunities Security implementations and authentication flowsProduct Manager (PM)
+
+Profile Business stakeholders who need to understand product capabilities, feature scope, and businesa logic.
+
+Key Deliverables They Need
+
+High-level product feature inventory
+
+User journey flows and business processes
+
+Feature dependencies and priority indicators
+
+Integration points with external services
+
+Business rule documentation
+
+Data insights and analytics capabilities
+
+Limitations and technical constraints
+
+Roadmap implications based on current architecture
+
+Tech Stack
+
+LangGraph Multi-agent orchestration with checkpointing
+
+FastAPI Backend API and WebSocket server
+
+pgvector Semantic search over code (PostgreSQL. extension)
+
+External MCP Servers File operations and knowledge base tools
+
+Langfuse Observability and token tracking
+
+LLM Azure OpenAl
+
+API Docs Swagger
+
+Real-time updates: Your choice (eg. polling or SSE)
+
+User Flow Overview
+
+The system should support the following user journey
+
+1 Authentication & Onboarding
+
+User signs up or logs in (role: User or Admin)
+
+View existing projects
+
+2. Project Creation & Configuration
+
+Uploads codebase (ZIP or GitHub URL)
+
+Selects target personas (SDE, PM, or both)
+
+Configures agent behavior and preferences
+
+Imtiates analysis
+
+3. Active Analysis Phase
+
+Monitors real-time progress updates
+
+Can pause analysis at any time
+
+Asks questions about ongoing analysis,
+
+Adds custom instructions or context
+
+Resumes analysis when ready
+Documentation Review
+
+Views structured reports per persona
+
+Interacts with Q&A system
+
+Explores visual diagrams
+
+Asks follow up questions
+
+5. Export & Share
+
+Downloads documentation in multiple formats
+
+Saves analysis for future reference
+
+(Admin only) Manages user access and projects
+
+Milestones
+
+Milestone 1: Four Sation - "User Can Start"
+
+Goal: Create a system where users can authenticate and initiate codebase analysis
+
+What Users Should Be Able to Do:
+
+1. Authentication and Signup Flow
+
+Signup/Registration flow for new users
+
+Login as either User or Admin
+
+User can see their own projects
+
+2. Project Initiation
+
+Upload a ZIP file or provide GitHub repository URL
+
+Select which personas to generate documentation for (SDE, PM, or both)
+
+View project created with unique identifier
+
+3. Basic Infrastructure
+
+File storage and project tracking working
+
+Configuration management for different environments
+
+Comprehensive error handling with user-friendly messages
+
+API documentation available via Swagger
+
+Invalid File Handling
+
+System must gracefully handle and provide clear feedback for:
+
+Corrupted or incomplete ZIP files
+
+Files that are too large (define reasonable limit, e.g.. 100MB)
+
+Non-code repositories (eg. pure documentation, binary only)
+
+Wrong file formats (eg., RAR, 7z instead of ZIP)
+
+Empty repositories or repositories with no recognizable code
+Malformed GitHub URLs or private repositories without access
+
+Demo Scenario:
+
+User signs up logs in Uploads a repository Selects SDE and PM personas Sees "Analysis Started confirmation Project ID displayed
+
+Milestone 2: Intelligent Preprocessing - "System Understands Structure"
+
+Goal: Build smart prefocessing that understands what to analyze
+
+What Users Should Be Able To Do:
+
+1. See Repository Intelligence
+
+System identifies repository type and structure
+
+Important files automatically detected
+
+File metadata extracted and stored
+
+2. Smart File Processing
+
+Entry points identified (main.py, index.js, etc.)
+
+Configuration files parsed for stack understanding
+
+Dependencies and framework detection
+
+Skip patterns applied (node modules, git, etc.)
+
+3. Enable Code Discovery
+
+Code broken into logical chunks (functions, classes)
+
+Metadata attached to each chunk (file, line numbers, type)
+
+Semantic understanding layer built for intelligent search
+
+Users can ask questions and system finds relevant code sections
+
+Demo Scenario:
+
+System processes repository Shows "Detected: Python FastAPI project"-"Found 12 API endpoints" "Identified main py as entry point" "Prepared 150 code sections for analysis" User searches "authentication" and gets relevant code sections
+
+Milestone 3: Real-Time Progress - "User Sees Everything"
+Goal Provide live visibility into analysis progress
+
+What Users Should Be Able To Do:
+
+1. Live Progress Updates
+
+See current processing stage with descriptive labels
+
+Watch file-by-file progress with names
+
+View percentage completion
+
+2. Structured Activity Feed
+
+Processing updates (e.g. "Analyzing auth.py")
+
+Milestone completions (eg.. "Preprocessing Complete")
+
+Warning notifications (eg. "Skipped binary file: image.png")
+
+Error alerts with clear descriptions
+
+Demo Scenario:
+
+Analysis starts Feed shows: "Processing file 1/100: auth.py" "Extracting functions and classes" "Building code understanding: 45% "Stage complete: Preprocessing Progress bar updates smoothly User sees real-time activity
+
+Milestone 4: Multi-Agent Orchestra - "Agents Work Together"
+
+Goal: Implement specialized agents with single responsibilities
+
+What Users Should Be Able To Do:
+
+1. Configure Agent Behavior (Hefore Analysis Starts)
+
+Select analysis depth (Quick/Standard/Deep)
+
+Choose documentation verbosity level
+
+Enable/disable specific analysis features
+
+Set preferences for diagram generation
+
+Save configuration templates for reuse
+
+2. Agent Orchestration via LangGraph
+
+See different agents activating sequentially
+
+Each agent reports its specific task
+
+Agents pass information between each other
+
+Parallel execution where logical
+
+3. Web-Augmented Analysis
+
+Agents search for latest documentation online when needed
+Examples of web-augmented capabilities:
+
+Pramework Best Practices: "Searching FastAPI documentation for async endpoint patterns"
+
+Security Recommendations "Checking OWASP guidelines for authentication implementation"
+
+Version-Specific Information: "Finding migration notes for React 18 features used in codebase
+
+Library Usage Patterns 'Retrieving recommended patterns for SQLAlchemy session management"
+
+4 Persona-Specific Agent Groups
+
+Technical analysis agents for SDE documentation
+
+Business logic agents for PM artifacts
+
+Coordination agent that routes work appropriately
+
+Demo Scenario:
+
+User configures "Deep analysis, High verbosity Analysis starts → Agent 1:
+
+"Analyzing file structure Agent 2: "Extracting API signatures Agent 3: "Searching for Fast API best practices online Agent 4 'Generating SDE documentation Agent 5: 'Creating PM feature summary Agents work in coordinated sequence
+
+Milestone 5: Interactive Control - "User Drives the Analysis"
+
+Goal Enable user control with pause/resume and interactive questioning
+
+What Users Should Be Able To Do:
+
+1. Manual Pause & Resume
+
+Pause analysis at any moment using Ul control
+
+Analysis state is preserved during pause
+
+Resume from exact point where paused
+
+System handles pause gracefully (no data loss)
+
+2. Interactive Intelligence-Ask Questions During Analysis
+
+Guardrail 1-Questions About Analysis. Users can query the system about
+
+what it's currently analyzing
+
+Example: "What are you analyzing right now?"
+
+Example: "Why is this taking so long?"
+
+Example: "What have you found so far?"
+Guardrail 2-Add Context to Analysis. Users can inject additional
+
+information or instructions
+
+Example: "Focus more on the payment module"
+
+Example: "The authentication system uses OAuth2"
+
+Example: This is a legacy system being migrated"
+
+3. State Management
+
+Analysis state saved automatically during pause
+
+User inputs and context additions are stored
+
+System can recover from interruptions
+
+Previous interactions are remembered
+
+Demo Scenario:
+
+System Analysis running (40% complete) User clicks "Pause Analysis pauses cleanly User aske "What's the main API framework you've detected? responds: "FastAPI with 12 endpoints User adds: "The /admin routes are deprecated, focus on/api/v2 User clicks "Resume Analysis continues with added context Final documentation emphasizes v2 APls
+
+Milestone 6: Rich Outputs - "Beautiful Documentation"
+
+Goal: Generate comprehensive, structured documentation with visualizations
+
+What Users Should Be Able To Do:
+
+1. View Structured Reports
+
+Each persona gets a tailored report with clear sections:
+
+SDE Report: Architecture, API Docs, Database Schema, Code
+
+Structure, Setup Guide
+
+PM Report Feature Inventory, User Flows, Business Logic,
+
+Integrations. Limitations
+
+Reports use clear headings, sections, and formatting
+
+Technical depth appropriate to persona
+
+2. Natural Language Q&A
+
+Ask questions about the analyzed codebase
+
+Receive answers with code citations and file references
+
+See relevant code snippets in context
+
+Context-aware responses based on persona
+
+3. Visual Diagrams with Mermaid
+
+Architecture diagrams showing system components
+Flow charts illustrating business logic
+
+Sequence diagrams for API interactions
+
+Entity relationship diagrams for data models
+
+At least 4 different diagram types total
+
+4. Export Documentation
+
+Download complete report as Markdown
+
+Generate PDF with rendered visualizations
+
+Export includes all persona artifacts
+
+Diagrams are properly formatted in exports
+
+Minimal Approach:
+
+Clean summary view with key findings
+
+Sections for detailed content
+
+Q&A interface yailable but not overwhelming
+
+Demo Scenario:
+
+Analysis completes User views SDE report with 6 sections Sees architecture diagram Clicks Q&A Asks "How does authentication work?" Gets detailed answer with code references Views sequence diagram Asks follow-up:
+
+What database stores user semions Gets answer with DB schema Clicks "Export as PDF Downloads complete documentation with all diagrams rendered
+
+Milestone 7: Observability & Admin Control - "System Transparency"
+
+Goal: Complete observability of system operations and admin controls
+
+What Users Should Be Able To Do:
+
+1. Admin Dashboard-Project & User Management
+
+View all users in the system
+
+See all projects across users with status indicatori
+
+Perform CRUD operations on users (Create, Read, Update, Delete)
+
+Perform CRUD operations on projects
+
+Basic analytics (total users, active projects, completion rates)
+
+2. System Health Monitoring
+
+View currently running analyses
+See success/failure rates
+
+Monitor system resource usage (optional)
+
+Access error logs
+
+Separate Flow: Langfuse Integration for Token Tracking
+
+Goal: Track and optimize LLM usage independently
+
+What Should Be Tracked
+
+Every LLM call made during analysis
+
+Token usage per project and per agent
+
+Cost breakdow by operation type
+
+Performance metrics (latency, success rate)
+
+Complete execution traces
+
+How to Implement
+
+Integrate Langfuse SDK in backend
+
+Wrap all LLM calls with Langfuse tracing
+
+Create separate observability dashboard (can be Langfuse UI)
+
+Link traces back to projects for debugging
+
+Demo Scenario for Langfuse:
+
+Developer opens Langfuse dashboard Selects a project Sees complete trace
+
+tree with 15 agent calls Views token usage: 12.500 tokens Cost: $0.40
+
+Identifies one agent using 40% of tokens Optimizes that agent's prompt
+
+Brownie
+
+Challenge
+
+Remember Start simple, then iterate. Each milestone builds on the previous one. Focus on making each component work well before moving to the next!
