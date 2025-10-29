@@ -9,7 +9,7 @@ from agents.preprocessing_agent import preprocessing_agent
 import openai
 
 # Set your OpenAI API key
-openai.api_key = "sk-4zZtqKJtqKJtqKJtqKJtqKJtqKJtqKJtqKJtqKJ"  # Replace with your actual OpenAI API key
+openai.api_key = "sk-4zZtqKJtqKJtqKJtqKJtqKJtqKJtqKJtqKJ"  # Replace with your actual OpenAI API key
 
 # Simple Streamlit client for the Research Assistant backend.
 # Features:
