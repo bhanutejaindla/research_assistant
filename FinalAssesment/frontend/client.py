@@ -15,7 +15,7 @@ from typing import Optional
 # - Simple Chatbox that will attempt to call a job-scoped ask endpoint (POST /ask/{job_id}) if available
 
 # Configuration
-BACKEND_URL = st.secrets.get("backend_url", "http://localhost:8000")
+BACKEND_URL = "http://localhost:8080"  # Hardcoded to use port 8080
 POLL_INTERVAL = 1.0  # seconds
 
 # ---------------------------
