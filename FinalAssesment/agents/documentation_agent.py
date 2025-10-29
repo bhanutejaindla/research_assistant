@@ -7,56 +7,77 @@ load_dotenv()
 
 def documentation_agent(state: dict) -> dict:
     """
-    Generates developer-facing documentation based on outputs
-    from the code, security, and web augmentation agents.
+    Generates role-based documentation (PM or SDE) from analysis results.
+    Uses existing agent outputs (analysis, code, security, etc.) as context.
     """
 
-    state.setdefault("agent_log", [])
-
-    # Retrieve OpenAI API key from config or environment
+    role = state.get("role", "SDE")  # Default role = SDE
     api_key = state.get("config", {}).get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
     if not api_key:
-        raise RuntimeError(
-            "OPENAI_API_KEY not found in state['config'] or environment variables."
-        )
+        state.setdefault("agent_log", []).append("❌ Documentation Agent: Missing API key.")
+        return state
 
     client = OpenAI(api_key=api_key)
 
-    # Extract agent results safely
-    code_info = state.get("code_analysis_results", "No code analysis found.")
-    sec_info = state.get("security_findings", "No security findings found.")
-    web_info = state.get("web_aug_results", "No web augmentation results found.")
+    # Collect all previously generated insights
+    repo_overview = state.get("analysis_overview", "")
+    code_analysis = state.get("code_analysis_results", "")
+    security_findings = state.get("security_findings", "")
+    web_aug = state.get("web_aug_results", "")
 
-    # Merge results into a single input prompt
-    merged = (
-        f"Code summaries:\n{code_info}\n\n"
-        f"Security findings:\n{sec_info}\n\n"
-        f"Web insights and best practices:\n{web_info}"
-    )
-
-    prompt = (
-        "You are a technical documentation generator.\n"
-        "Given the following technical findings, code summaries, and security results, "
-        "write a concise and professional documentation summary intended for developers.\n\n"
-        f"{merged}"
-    )
-
-    try:
-        # Generate documentation
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
+    # Choose prompt style based on role
+    if role.upper() == "PM":
+        role_prompt = (
+            "You are a Product Manager creating documentation for stakeholders. "
+            "Explain in clear business terms:\n"
+            "- What this project does and why it exists.\n"
+            "- The key features and their business value.\n"
+            "- How the system supports users or product goals.\n"
+            "- Summarize technical complexity only at a high level."
+        )
+    else:  # SDE
+        role_prompt = (
+            "You are a Senior Software Engineer writing internal technical documentation. "
+            "Focus on how the system works:\n"
+            "- Explain repository structure and modules.\n"
+            "- Describe internal logic, dependencies, and APIs.\n"
+            "- Include technical challenges and improvement ideas.\n"
+            "- Keep it precise, structured, and developer-focused."
         )
 
-        doc_text = response.choices[0].message["content"]
+    full_context = f"""
+    Repository Overview:
+    {repo_overview}
 
-        # Update state
-        state["documentation"] = doc_text
-        state["agent_log"].append("Documentation Agent: Generated developer documentation successfully.")
+    Code Analysis:
+    {code_analysis}
 
+    Security Insights:
+    {security_findings}
+
+    Web Augmentation:
+    {web_aug}
+    """
+
+    prompt = f"{role_prompt}\n\nHere is the analysis context:\n{full_context}\n\nNow generate documentation for the role: {role.upper()}."
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert technical documentation generator."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.6,
+            max_tokens=800,
+        )
+
+        documentation = response.choices[0].message.content.strip()
+        state["documentation"] = documentation
+        state.setdefault("agent_log", []).append(f"📘 Documentation Agent: Generated {role.upper()} documentation.")
     except Exception as e:
-        state["agent_log"].append(f"Documentation Agent: API call failed: {str(e)}")
-        state["documentation"] = "Documentation generation failed."
+        state.setdefault("agent_log", []).append(f"❌ Documentation Agent failed: {str(e)}")
+        state["documentation"] = f"Error: {e}"
 
     return state

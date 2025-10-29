@@ -6,6 +6,11 @@ import os
 from typing import Optional
 from openai import OpenAI
 from dotenv import load_dotenv
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from agents.documentation_agent import documentation_agent
+import io
+
 
 # Import local agents
 from agents.analysis_agent import analysis_agent
@@ -243,15 +248,88 @@ def progress_ui():
         time.sleep(POLL_INTERVAL)
 
 
+def create_pdf_from_text(text: str) -> bytes:
+    """Generate a PDF file in memory from plain text."""
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    text_object = c.beginText(50, height - 50)
+    text_object.setFont("Helvetica", 11)
+    for line in text.split("\n"):
+        text_object.textLine(line)
+    c.drawText(text_object)
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer.getvalue()
 # ---------------------------
 # Query UI
 # ---------------------------
 
 def query_ui():
-    st.header("Ask the Repository Assistant")
+    st.header("Ask the Repository Assistant or Generate Documentation")
 
     if not st.session_state.get("analysis_results"):
         st.info("Run an analysis first.")
         return
 
-    query = st.text_input("Enter your question:")
+    tab1, tab2 = st.tabs(["💬 Ask Question", "📘 Generate Documentation"])
+
+    # ---------------------------------------------------------------------
+    # 🧠 Tab 1: General Query Mode (Ask the repository assistant anything)
+    # ---------------------------------------------------------------------
+    with tab1:
+        query = st.text_input("Enter your question:")
+        if st.button("Ask", key="ask_button"):
+            results = st.session_state["analysis_results"]
+            context = (
+                f"Repository Overview:\n{results.get('analysis_overview', '')}\n\n"
+                f"Code Insights:\n{results.get('code_analysis_results', '')}\n\n"
+                f"Security Findings:\n{results.get('security_findings', '')}\n\n"
+                f"Web Augmentation Insights:\n{results.get('web_aug_results', '')}\n\n"
+            )
+            prompt = context + f"\n\nUser asks: {query}\nProvide a clear, helpful answer."
+            with st.spinner("Thinking..."):
+                answer = query_llm(prompt)
+            st.markdown("### 🧠 Assistant Answer")
+            st.write(answer)
+
+    # ---------------------------------------------------------------------
+    # 📘 Tab 2: Documentation Generation (Role-specific)
+    # ---------------------------------------------------------------------
+    with tab2:
+        st.markdown("Generate role-based documentation for the analyzed repository.")
+        role = st.selectbox("Select your role", ["Product Manager (PM)", "Software Developer (SDE)"])
+
+        if st.button("Generate Documentation", key="doc_button"):
+            role_key = "PM" if "Product" in role else "SDE"
+            state = st.session_state["analysis_results"]
+            state["role"] = role_key
+
+            with st.spinner(f"Generating documentation for {role_key}..."):
+                state = documentation_agent(state)
+
+            documentation = state.get("documentation", "⚠️ No documentation generated.")
+            st.session_state["analysis_results"] = state
+
+            # --- Display the output
+            st.subheader(f"📄 {role} Documentation")
+            st.markdown(documentation)
+
+            # --- Download as Markdown
+            st.download_button(
+                label="⬇️ Download as Markdown",
+                data=documentation,
+                file_name=f"{role_key}_Documentation.md",
+                mime="text/markdown"
+            )
+
+            # --- Download as PDF
+            pdf_data = create_pdf_from_text(documentation)
+            st.download_button(
+                label="📄 Download as PDF",
+                data=pdf_data,
+                file_name=f"{role_key}_Documentation.pdf",
+                mime="application/pdf"
+            )
+
