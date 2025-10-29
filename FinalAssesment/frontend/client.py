@@ -14,6 +14,7 @@ from state_manager import save_state, load_state
 from llm_streamer import stream_llm
 
 
+
 # Import local agents
 from agents.analysis_agent import analysis_agent
 from agents.code_agent import code_agent
@@ -317,7 +318,7 @@ def query_ui():
     # ---------------------------------------------------------------------
     with tab1:
         query = st.text_input("Enter your question:")
-        if st.button("Ask", key="ask_button"):
+        if st.button("Ask (Stream Mode)", key="ask_stream_button"):
             results = st.session_state["analysis_results"]
             context = (
                 f"Repository Overview:\n{results.get('analysis_overview', '')}\n\n"
@@ -325,11 +326,50 @@ def query_ui():
                 f"Security Findings:\n{results.get('security_findings', '')}\n\n"
                 f"Web Augmentation Insights:\n{results.get('web_aug_results', '')}\n\n"
             )
-            prompt = context + f"\n\nUser asks: {query}\nProvide a clear, helpful answer."
-            with st.spinner("Thinking..."):
-                answer = query_llm(prompt)
-            st.markdown("### 🧠 Assistant Answer")
-            st.write(answer)
+        prompt = context + f"\n\nUser asks: {query}\nProvide a clear, helpful answer."
+
+        # Load or init state
+        project_id = st.session_state.get("project_id", "local_project_1")
+        state = load_state(project_id)
+        if not state:
+            state = {"is_paused": False, "partial_output": "", "agent_log": []}
+
+        # Placeholder for live output
+        st.markdown("### 🧠 Assistant Answer (Streaming)")
+        output_placeholder = st.empty()
+
+        def update_ui(text):
+            output_placeholder.markdown(f"{text}")
+
+        # Start streaming response
+        stream_llm(
+            project_id=project_id,
+            prompt=prompt,
+            state=state,
+            role="query_agent",
+            ui_callback=update_ui,
+        )
+
+        # Add pause/resume buttons inline
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("⏸️ Pause Response"):
+                state["is_paused"] = True
+                save_state(project_id, state)
+                st.warning("Response paused!")
+        with col2:
+            if st.button("▶️ Resume Response"):
+                state["is_paused"] = False
+                save_state(project_id, state)
+                st.info("Resuming response...")
+                stream_llm(
+                    project_id=project_id,
+                    prompt=prompt,
+                    state=state,
+                    role="query_agent",
+                    ui_callback=update_ui,
+                )
+
 
     # ---------------------------------------------------------------------
     # 📘 Tab 2: Documentation Generation (Role-specific)

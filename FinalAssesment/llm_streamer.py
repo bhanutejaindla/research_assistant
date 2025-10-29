@@ -1,47 +1,87 @@
-import os, json
+import os
+import json
+import time
 from openai import OpenAI
+from state_manager import save_state, load_state  # ✅ ensure both exist
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def stream_llm(project_id: int, prompt: str, state: dict, role="analysis_agent"):
+def stream_llm(project_id: int, prompt: str, state: dict, role="analysis_agent", ui_callback=None):
     """
     Stream OpenAI output token-by-token with manual pause/resume support.
-    Saves partial output to disk on pause.
+    Supports continuation from previously paused state.
+
+    Args:
+        project_id: Unique ID for the project.
+        prompt: User prompt for LLM.
+        state: Mutable dict holding 'partial_output', 'is_paused', etc.
+        role: Role name for identification.
+        ui_callback: Optional callable to update UI in real-time.
     """
     state_dir = "analysis_states"
     os.makedirs(state_dir, exist_ok=True)
-    state_path = os.path.join(state_dir, f"state_project_{project_id}.json")
 
-    partial_output = state.get("partial_output", "")
+    # ✅ Load previous state if any
+    prev_state = load_state(project_id) or {}
+    partial_output = prev_state.get("partial_output", state.get("partial_output", ""))
+    is_paused = prev_state.get("is_paused", False)
+
+    # ✅ Build message with continuation context
+    if partial_output:
+        messages = [
+            {
+                "role": "user",
+                "content": f"{prompt}\n\n(Continue from here: {partial_output[-200:]})"
+            }
+        ]
+    else:
+        messages = [{"role": "user", "content": prompt}]
+
+    # Update runtime info
     state["current_role"] = role
+    state["prompt"] = prompt
+    state["status"] = "running"
 
-    from streamlit import session_state as st_session
-    placeholder = st_session.get("placeholder", None)
+    try:
+        with client.chat.completions.stream(
+            model="gpt-4o-mini",
+            messages=messages,
+        ) as stream:
+            for event in stream:
+                # 🟡 Check for pause
+                if state.get("is_paused"):
+                    state["status"] = "paused"
+                    state["partial_output"] = partial_output
+                    save_state(project_id, state)
+                    print(f"⏸️ Paused {role} stream at {len(partial_output)} chars")
+                    return partial_output  # stop immediately
 
-    with client.chat.completions.stream(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-    ) as stream:
-        for event in stream:
-            # Check pause flag
-            if state.get("is_paused"):
-                with open(state_path, "w") as f:
-                    json.dump(state, f, indent=2)
-                print(f"⏸️ Paused during {role} stream at {len(partial_output)} chars")
-                break
+                # 🟢 Stream real-time tokens
+                if hasattr(event, "delta") and event.delta.get("content"):
+                    token = event.delta["content"]
+                    partial_output += token
+                    state["partial_output"] = partial_output
 
-            if event.type == "message.delta" and event.delta.get("content"):
-                token = event.delta["content"]
-                partial_output += token
-                state["partial_output"] = partial_output
-                if placeholder:
-                    placeholder.markdown(partial_output)
+                    if ui_callback:
+                        ui_callback(partial_output)
+                    else:
+                        print(token, end="", flush=True)
 
-        else:
-            # Stream finished naturally
-            state["partial_output"] = partial_output
-            with open(state_path, "w") as f:
-                json.dump(state, f, indent=2)
-            print(f"✅ Stream finished for {role}")
+                    time.sleep(0.01)  # smoother updates
+
+            # ✅ Completed successfully
+            state["status"] = "completed"
+            state["partial_output"] = ""
+            print(f"\n✅ Stream completed for {role}")
+
+    except Exception as e:
+        state["status"] = "error"
+        state["error"] = str(e)
+        print(f"❌ Stream failed for {role}: {e}")
+
+    finally:
+        # Always save state
+        save_state(project_id, state)
+        print(f"💾 State saved for project {project_id} ({state['status']})")
 
     return partial_output
