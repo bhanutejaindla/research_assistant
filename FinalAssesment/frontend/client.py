@@ -24,8 +24,7 @@ POLL_INTERVAL = 1.0  # seconds
 
 def ensure_session_state():
     if "users" not in st.session_state:
-        # format: {username: {password: str, role: str}}
-        st.session_state["users"] = {}
+        st.session_state["users"] = {}  # format: {email: {password: str, role: str}}
     if "current_user" not in st.session_state:
         st.session_state["current_user"] = None
     if "job_id" not in st.session_state:
@@ -34,6 +33,8 @@ def ensure_session_state():
         st.session_state["feed"] = []
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = []
+    if "auth_token" not in st.session_state:
+        st.session_state["auth_token"] = None  # Initialize auth_token to avoid KeyError
 
 
 def signup(email: str, password: str, role: str) -> Optional[str]:
@@ -102,7 +103,7 @@ def auth_ui():
         st.sidebar.write(f"Signed in as **{st.session_state['current_user']['email']}** ({st.session_state['current_user']['role']})")
         if st.sidebar.button("Sign out"):
             signout()
-            st.experimental_rerun()
+            st.experimental_rerun()  # Ensure this is a function call
         return
 
     tab = st.sidebar.radio("Auth", ["Sign in", "Sign up"])
@@ -120,7 +121,7 @@ def auth_ui():
                     st.sidebar.error(err)
                 else:
                     st.sidebar.success("Account created and signed in")
-                    st.experimental_rerun()
+                    st.experimental_rerun()  # Ensure this is a function call
 
     else:
         with st.sidebar.form("signin_form"):
@@ -134,7 +135,7 @@ def auth_ui():
                     st.sidebar.error(err)
                 else:
                     st.sidebar.success("Signed in")
-                    st.experimental_rerun()
+                    st.experimental_rerun()  # Ensure this is a function call
 
 
 def upload_and_start_ui():
