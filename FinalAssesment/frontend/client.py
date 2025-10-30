@@ -316,76 +316,43 @@ def query_ui():
     # ---------------------------------------------------------------------
     # 🧠 Tab 1: General Query Mode (Ask the repository assistant anything)
     # ---------------------------------------------------------------------
+
     with tab1:
-        st.subheader("💬 Query Assistant")
-
         query = st.text_input("Enter your question:")
+        context = ""  # ✅ define before use to prevent UnboundLocalError
 
-        results = st.session_state.get("analysis_results", {})
-        project_id = st.session_state.get("project_id", "local_project_1")
-
-        context = (
-            f"Repository Overview:\n{results.get('analysis_overview', '')}\n\n"
-            f"Code Insights:\n{results.get('code_analysis_results', '')}\n\n"
-            f"Security Findings:\n{results.get('security_findings', '')}\n\n"
-            f"Web Augmentation Insights:\n{results.get('web_aug_results', '')}\n\n"
-        )
-
-        # Streamlit output placeholder
-        output_placeholder = st.empty()
-
-        # Define UI callback for streaming tokens
-        def update_ui(text):
-            # Always update the markdown placeholder
-            output_placeholder.markdown(f"🧠 **LLM Response (Live):**\n\n{text}")
-
-        # ✅ Only run when user clicks Ask
         if st.button("Ask (Stream Mode)", key="ask_stream_button"):
-            if not query.strip():
-                st.warning("Please enter a question.")
-            else:
-                # Build full prompt
-                prompt = context + f"\n\nUser asks: {query}\nProvide a clear, helpful answer."
+            results = st.session_state.get("analysis_results", {})
+            context = (
+                f"Repository Overview:\n{results.get('analysis_overview', '')}\n\n"
+                f"Code Insights:\n{results.get('code_analysis_results', '')}\n\n"
+                f"Security Findings:\n{results.get('security_findings', '')}\n\n"
+                f"Web Augmentation Insights:\n{results.get('web_aug_results', '')}\n\n"
+            )
 
-                # Initialize/load state
-                state = load_state(project_id)
-                if not state:
-                    state = {"is_paused": False, "partial_output": "", "agent_log": []}
-
-                st.info("🧠 Generating response... (You can pause anytime below)")
-
-                # Call stream_llm (async token streaming)
-                stream_llm(
-                    project_id=project_id,
-                    prompt=prompt,
-                    state=state,
-                    role="query_agent",
-                    ui_callback=update_ui,
-                )
-
-        # Add Pause / Resume Buttons
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("⏸️ Pause Response"):
-                state = load_state(project_id)
-                state["is_paused"] = True
-                save_state(project_id, state)
-                st.warning("Response paused!")
-        with col2:
-            if st.button("▶️ Resume Response"):
-                state = load_state(project_id)
-                state["is_paused"] = False
-                save_state(project_id, state)
-                st.info("Resuming response...")
-                stream_llm(
-                    project_id=project_id,
-                    prompt=prompt,
-                    state=state,
-                    role="query_agent",
-                    ui_callback=update_ui,
-                )
+            prompt = context + f"\n\nUser asks: {query}\nProvide a clear, helpful answer."
 
 
+            project_id = st.session_state.get("project_id", "local_project_1")
+            state = load_state(project_id) or {"is_paused": False, "partial_output": "", "agent_log": []}
+
+            st.markdown("### 🧠 Assistant Answer (Streaming)")
+            output_placeholder = st.empty()
+
+            def update_ui(text):
+                # 🟢 Use markdown to show text live
+                output_placeholder.markdown(text)
+
+            # 🔥 Call stream function
+            stream_llm(
+                project_id=project_id,
+                prompt=prompt,
+                state=state,
+                role="query_agent",
+                ui_callback=update_ui,
+            )
+
+    
     # ---------------------------------------------------------------------
     # 📘 Tab 2: Documentation Generation (Role-specific)
     # ---------------------------------------------------------------------
